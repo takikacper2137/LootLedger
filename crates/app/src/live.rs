@@ -39,6 +39,7 @@ struct Readiness {
     size: u64,
     modified: f64,
     first_seen: f64,
+    locked: Option<bool>,
 }
 
 static REPLAY_READINESS: OnceLock<Mutex<HashMap<PathBuf, Readiness>>> = OnceLock::new();
@@ -53,12 +54,18 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
         size,
         modified,
         first_seen: now,
+        locked: facts.map(|f| f.locked),
     });
-    if entry.size != size || (entry.modified - modified).abs() > 1e-6 {
+    let locked = facts.map(|f| f.locked);
+    if entry.size != size
+        || (entry.modified - modified).abs() > 1e-6
+        || entry.locked != locked
+    {
         *entry = Readiness {
             size,
             modified,
             first_seen: now,
+            locked,
         };
         return false;
     }
