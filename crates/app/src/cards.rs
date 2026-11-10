@@ -1363,7 +1363,11 @@ pub fn pack(cards: Vec<CardData>, columns: i32) -> Vec<crate::DashRow> {
 
 /// The match pop-up's second line: how this match compares, then today's total.
 pub fn popup_detail(count: i64, snap: &Snapshot, p: &Prefs) -> String {
-    versus(count, snap.matches, snap.best, snap.avg, snap.today, p)
+    format!(
+        "{}\nLifetime {}",
+        versus(count, snap.matches, snap.best, snap.avg, snap.today, p),
+        p.int(snap.all)
+    )
 }
 
 fn versus(
