@@ -810,6 +810,13 @@ fn scan() {
 
 fn scan_finished(result: live::ScanResult) {
     let retry_pending = result.pending || !result.skipped.is_empty();
+    // Match ChestCounter's slower cadence while Fortnite is still recording a replay.
+    // Once the live flag is cleared, retry quickly while the file/key is being finalized.
+    let retry_delay = if result.live.is_some() {
+        15
+    } else {
+        3
+    };
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -829,7 +836,7 @@ fn scan_finished(result: live::ScanResult) {
     if (again || retry_pending) && !counted {
         // A replay can still be flushing or waiting for its encryption key. Retry independently
         // of the normal scan interval, without requiring the user to restart LootLedger.
-        Timer::single_shot(Duration::from_secs(3), scan);
+        Timer::single_shot(Duration::from_secs(retry_delay), scan);
     }
     refresh(false);
     if counted {
