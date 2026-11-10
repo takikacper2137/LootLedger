@@ -89,6 +89,7 @@ pub struct Tracker {
     pub state: State,
     file: Option<PathBuf>,
     size: Option<u64>,
+    modified: Option<f64>,
     facts: Option<Facts>,
     started: Option<f64>,
 }
@@ -100,6 +101,7 @@ impl Tracker {
             state: State::Idle,
             file: None,
             size: None,
+            modified: None,
             facts: None,
             started: None,
         }
@@ -111,9 +113,16 @@ impl Tracker {
         if let Some((newest, meta)) = replays(folder).pop() {
             let mtime = seconds(meta.modified().unwrap_or(UNIX_EPOCH));
             if now - mtime < STALE {
-                if Some(&newest) != self.file.as_ref() || Some(meta.len()) != self.size {
+                // Fortnite can finalize a replay by rewriting its header without changing its size.
+                // Watch the modification time as well as the path and length, otherwise `live` can
+                // remain cached and the tracker will not notice that the match has ended.
+                if Some(&newest) != self.file.as_ref()
+                    || Some(meta.len()) != self.size
+                    || Some(mtime) != self.modified
+                {
                     self.facts = peek(&newest);
                     self.size = Some(meta.len());
+                    self.modified = Some(mtime);
                 }
                 if self.facts.is_some_and(|f| f.live) {
                     if Some(&newest) != self.file.as_ref() {
@@ -232,6 +241,9 @@ pub fn scan(
         }
         todo.push((path, name, meta.len(), mtime));
     }
+    // Start with the newest replay. The live tracker follows that file, so an older replay
+    // must not occupy the first worker slot while the just-finished match waits in the queue.
+    todo.sort_by(|a, b| b.3.total_cmp(&a.3));
     let total = todo.len();
     // Decoding is the slow part (about 1 s per replay), so a few threads read and decode while this one
     // imports through its single connection. Half the cores at most: Fortnite may be running.
