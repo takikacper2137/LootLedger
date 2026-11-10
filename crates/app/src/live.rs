@@ -245,15 +245,45 @@ pub fn scan(
     // must not occupy the first worker slot while the just-finished match waits in the queue.
     todo.sort_by(|a, b| b.3.total_cmp(&a.3));
     let total = todo.len();
-    // Decoding is the slow part (about 1 s per replay), so a few threads read and decode while this one
-    // imports through its single connection. Half the cores at most: Fortnite may be running.
-    let workers = std::thread::available_parallelism()
-        .map_or(1, |n| (n.get() / 2).clamp(1, 6))
-        .min(total.max(1));
-    let queue = std::sync::Mutex::new(todo.into_iter());
-    let (sender, receiver) = std::sync::mpsc::sync_channel(workers);
     let mut error = None;
     let mut skipped = Vec::new();
+
+    // The tracker follows the newest replay. Decode and import that file on its own before
+    // starting workers for older files: otherwise a slow older decode can finish first and the
+    // UI remains stuck at "Reading replays 1/2" even though the current match is ready.
+    let first_done = if !todo.is_empty() {
+        let (path, name, size, mtime) = todo.remove(0);
+        let result = std::fs::read(&path)
+            .map(|data| replay::decode(&path.to_string_lossy(), &data))
+            .map_err(|e| format!("{}: {e}", path.display()));
+        match result {
+            Ok(result) if result.live && now - mtime < LIVE_WINDOW => live = Some(result),
+            Ok(result) => match store.import_replay(&result, &name, size, mtime) {
+                Ok(_) => {}
+                Err(Error::Invalid(e)) => skipped.push(format!("{name}: {e}")),
+                Err(e) => {
+                    return ScanResult {
+                        live,
+                        error: Some(format!("{name}: {e}")),
+                        skipped,
+                    };
+                }
+            },
+            Err(e) => skipped.push(e),
+        }
+        progress(1, total);
+        1
+    } else {
+        0
+    };
+
+    // Older replays can still be decoded in parallel after the current match has been imported.
+    // A slow historical file may delay the full scan, but it can no longer delay counting this match.
+    let workers = std::thread::available_parallelism()
+        .map_or(1, |n| (n.get() / 2).clamp(1, 6))
+        .min(todo.len().max(1));
+    let queue = std::sync::Mutex::new(todo.into_iter());
+    let (sender, receiver) = std::sync::mpsc::sync_channel(workers);
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let sender = sender.clone();
@@ -273,8 +303,8 @@ pub fn scan(
         }
         drop(sender);
         let receiver = receiver; // dropped on an early stop, which releases any worker waiting to send
-        for (done, (result, name, size, mtime)) in receiver.iter().enumerate() {
-            let done = done + 1; // every file counts toward the progress, whatever became of it
+        for (offset, (result, name, size, mtime)) in receiver.iter().enumerate() {
+            let done = first_done + offset + 1; // every file counts toward the progress, whatever became of it
             let result = match result {
                 Ok(r) => r,
                 Err(e) => {
