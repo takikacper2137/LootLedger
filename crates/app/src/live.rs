@@ -268,8 +268,7 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
     // Keep tests on the same decoder while production builds use process isolation.
     #[cfg(test)]
     {
-        let data = std::fs::read(path)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         return Ok(lootledger_core::replay::decode(
             &path.to_string_lossy(),
             &data,
@@ -296,7 +295,7 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("{}: could not start isolated decoder: {e}", path.display()))?;
-
+    
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
