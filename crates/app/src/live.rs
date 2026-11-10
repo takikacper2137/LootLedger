@@ -602,7 +602,7 @@ mod tests {
         assert!(!replay_is_ready(&path, 500, 1_000.0, locked, 1_000.0));
         assert!(!replay_is_ready(&path, 500, 1_000.0, locked, 1_030.0));
         assert!(!replay_is_ready(&path, 500, 1_000.0, unlocked, 1_030.0));
-        assert!(replay_is_ready(&path, 500, 1_000.0, unlocked, 1_004.1 + 1_030.0));
+        assert!(replay_is_ready(&path, 500, 1_000.0, unlocked, 1_034.1));
     }
 
     #[test]
