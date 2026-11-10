@@ -293,7 +293,6 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|e| format!("{}: could not start isolated decoder: {e}", path.display()))?;
-        
         let started = Instant::now();
         let status = loop {
             match child.try_wait() {
