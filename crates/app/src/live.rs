@@ -42,7 +42,9 @@ static REPLAY_READINESS: OnceLock<Mutex<HashMap<PathBuf, Readiness>>> = OnceLock
 /// Mirror ChestCounter's readiness gate: don't decode while Fortnite is still flushing the replay.
 fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, now: f64) -> bool {
     let cache = REPLAY_READINESS.get_or_init(|| Mutex::new(HashMap::new()));
-    let Ok(mut cache) = cache.lock() else { return false };
+    let Ok(mut cache) = cache.lock() else {
+        return false;
+    };
     let entry = cache.entry(path.to_path_buf()).or_insert(Readiness {
         size,
         modified,
@@ -64,7 +66,7 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
         Some(Facts { live: true, .. }) => {
             // A replay still marked live but untouched for a long time was abandoned (crash/quit).
             stable_for >= KEY_MISSING_QUIET && quiet_for >= KEY_MISSING_QUIET
-        },
+        }
         // Fortnite has cleared the live flag and written the key: require a stable file
         // and a short quiet period before decoding.
         Some(Facts { locked: false, .. }) => {
