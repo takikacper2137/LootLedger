@@ -812,11 +812,7 @@ fn scan_finished(result: live::ScanResult) {
     let retry_pending = result.pending || !result.skipped.is_empty();
     // Match ChestCounter's slower cadence while Fortnite is still recording a replay.
     // Once the live flag is cleared, retry quickly while the file/key is being finalized.
-    let retry_delay = if result.live.is_some() {
-        15
-    } else {
-        3
-    };
+    let retry_delay = if result.live.is_some() { 15 } else { 3 };
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
