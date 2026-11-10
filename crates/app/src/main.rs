@@ -795,6 +795,7 @@ fn scan() {
 }
 
 fn scan_finished(result: live::ScanResult) {
+    let retry_pending = result.pending;
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -811,10 +812,9 @@ fn scan_finished(result: live::ScanResult) {
     })
     .unwrap_or(false);
     let counted = again && match_counted();
-    if again && !counted {
-        // The replay may still be flushing, locked, or the ledger may have been temporarily busy.
-        // Keep retrying while the tracker is saving; otherwise one failed scan leaves it stuck
-        // in Saving until the user restarts the app.
+    if (again || retry_pending) && !counted {
+        // A replay can still be flushing or waiting for its encryption key. Retry independently
+        // of the normal scan interval, without requiring the user to restart LootLedger.
         Timer::single_shot(Duration::from_secs(3), scan);
     }
     refresh(false);
