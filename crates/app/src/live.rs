@@ -89,6 +89,7 @@ pub struct Tracker {
     pub state: State,
     file: Option<PathBuf>,
     size: Option<u64>,
+    modified: Option<f64>,
     facts: Option<Facts>,
     started: Option<f64>,
 }
@@ -100,6 +101,7 @@ impl Tracker {
             state: State::Idle,
             file: None,
             size: None,
+            modified: None,
             facts: None,
             started: None,
         }
@@ -111,9 +113,16 @@ impl Tracker {
         if let Some((newest, meta)) = replays(folder).pop() {
             let mtime = seconds(meta.modified().unwrap_or(UNIX_EPOCH));
             if now - mtime < STALE {
-                if Some(&newest) != self.file.as_ref() || Some(meta.len()) != self.size {
+                // Fortnite can finalize a replay by rewriting its header without changing its size.
+                // Watch the modification time as well as the path and length, otherwise `live` can
+                // remain cached and the tracker will not notice that the match has ended.
+                if Some(&newest) != self.file.as_ref()
+                    || Some(meta.len()) != self.size
+                    || Some(mtime) != self.modified
+                {
                     self.facts = peek(&newest);
                     self.size = Some(meta.len());
+                    self.modified = Some(mtime);
                 }
                 if self.facts.is_some_and(|f| f.live) {
                     if Some(&newest) != self.file.as_ref() {
