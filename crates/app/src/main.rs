@@ -205,10 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Timer::single_shot(Duration::from_secs(5), || check_update(false));
         }
     }
-    let auto = with_app(|a| a.config.auto_watch()).unwrap_or(false);
-    if auto {
-        Timer::single_shot(Duration::from_millis(150), scan);
-    }
+    // Always do one startup scan, even when periodic auto-watch is disabled.
+    // Otherwise a replay finalized before LootLedger starts is never observed by poll_live():
+    // the tracker only enters Saving after it has first seen the replay as Live.
+    Timer::single_shot(Duration::from_millis(150), scan);
     if let Some(seconds) = std::env::args().find_map(|s| {
         s.strip_prefix("--quit-after=")
             .and_then(|s| s.parse::<u64>().ok())
