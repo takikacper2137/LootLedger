@@ -12,8 +12,8 @@ use lootledger_core::{
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
     process::{Command, Stdio},
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -303,7 +303,10 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
                 let _ = child.kill();
                 let _ = child.wait();
                 let _ = std::fs::remove_file(&output);
-                return Err(format!("{}: decoder process status failed: {e}", path.display()));
+                return Err(format!(
+                    "{}: decoder process status failed: {e}",
+                    path.display()
+                ));
             }
         }
     };
