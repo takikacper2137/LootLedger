@@ -16,7 +16,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 #[cfg(not(test))]
-use std::{process::{Command, Stdio}, time::Instant};
+use std::{
+    process::{Command, Stdio},
+    time::Instant,
+};
 
 /// Fortnite flushes the replay about every 20 s; no write for 90 s means recording stopped.
 const STALE: f64 = 90.0;
