@@ -385,13 +385,17 @@ pub fn scan(
             && facts.live
             && now - mtime < LIVE_WINDOW
         {
-            // Still recording: keep the live estimate and never send this file to the decoder.
+            // Still recording: keep the live estimate and mark the scan pending.
+            // The next scan must happen even when live tracking is disabled or the app
+            // started after the match began; otherwise this replay is silently forgotten
+            // until the user restarts LootLedger.
             live = Some(Replay {
                 file: path.to_string_lossy().into_owned(),
                 live: true,
                 length_seconds: facts.recorded,
                 ..Replay::default()
             });
+            pending = true;
             continue;
         }
         // A valid but incomplete header can happen while Fortnite is finalizing the replay.
