@@ -294,6 +294,29 @@ pub enum Value {
     Text(String),
 }
 
+/// The line under a tile's number that adds the teammates' chests: "+640 from teammates · 5,117 together".
+/// Empty when no teammate chest was recorded for the period (solo play, or nothing in range of your replay).
+fn with_team(mine: i64, team: i64, p: &Prefs) -> String {
+    if team <= 0 {
+        return String::new();
+    }
+    format!(
+        "+{} from teammates · {} together",
+        p.int(team),
+        p.int(mine + team)
+    )
+}
+
+/// Joins detail lines, skipping empty ones.
+fn lines(parts: &[String]) -> String {
+    parts
+        .iter()
+        .filter(|t| !t.is_empty())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What a stat tile shows: value, detail, change versus before, sparkline values and their tooltips.
 pub type StatValue = (
     Value,
@@ -331,7 +354,7 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
             let tips = tips_for(&fourteen, day_tips());
             (
                 Value::Number(snap.all as f64, 0),
-                detail,
+                lines(&[detail, with_team(snap.all, snap.team_total, p)]),
                 None,
                 fourteen,
                 tips,
@@ -341,7 +364,7 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
             let tips = tips_for(&fourteen, day_tips());
             (
                 Value::Number(snap.today as f64, 0),
-                String::new(),
+                with_team(snap.today, snap.team_today, p),
                 Some((snap.today, snap.today_prev, "vs yesterday")),
                 fourteen,
                 tips,
@@ -351,7 +374,7 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
             let tips = tips_for(&fourteen, day_tips());
             (
                 Value::Number(snap.week as f64, 0),
-                String::new(),
+                with_team(snap.week, snap.team_week, p),
                 Some((snap.week, snap.week_prev, "vs the same days last week")),
                 fourteen,
                 tips,
@@ -361,7 +384,7 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
             let tips = tips_for(&fourteen, day_tips());
             (
                 Value::Number(snap.month as f64, 0),
-                String::new(),
+                with_team(snap.month, snap.team_month, p),
                 Some((snap.month, snap.month_prev, "vs the same days last month")),
                 fourteen,
                 tips,
@@ -371,7 +394,10 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
             let tips = tips_for(&fourteen, day_tips());
             (
                 Value::Number(snap.session as f64, 0),
-                "since LootLedger opened".into(),
+                lines(&[
+                    "since LootLedger opened".into(),
+                    with_team(snap.session, snap.team_session, p),
+                ]),
                 None,
                 fourteen,
                 tips,
@@ -403,7 +429,10 @@ pub fn stat_value(key: &str, ctx: &Context) -> StatValue {
                 let tips = tips_for(&recent, recent_tips);
                 (
                     Value::Number(last.count as f64, 0),
-                    format!("{}{place}", last.mode),
+                    lines(&[
+                        format!("{}{place}", last.mode),
+                        with_team(last.count, last.team, p),
+                    ]),
                     None,
                     recent,
                     tips,
@@ -1368,6 +1397,25 @@ mod tests {
         assert_eq!(line(40), "Your best match yet · Today 1,234");
         // The first match is not a "best" yet, and with no average only today is shown.
         assert_eq!(versus(5, 1, Some(5), None, 5, &p), "Today 5");
+    }
+
+    #[test]
+    fn tiles_add_the_teammates_line_only_when_there_is_one() {
+        let p = Prefs::default();
+        assert_eq!(
+            with_team(187, 412, &p),
+            "+412 from teammates · 599 together"
+        );
+        assert_eq!(
+            with_team(4477, 640, &p),
+            "+640 from teammates · 5,117 together"
+        );
+        assert_eq!(with_team(187, 0, &p), "");
+        assert_eq!(
+            lines(&["1,788 broken open".into(), String::new()]),
+            "1,788 broken open"
+        );
+        assert_eq!(lines(&["a".into(), "b".into()]), "a\nb");
     }
 
     #[test]
