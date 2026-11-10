@@ -72,12 +72,10 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
         Some(Facts { locked: false, .. }) => {
             stable_for >= FINALIZED_QUIET && quiet_for >= FINALIZED_QUIET
         }
-        // The header is finalized but the encryption key is not available yet.
-        // A quiet file is not enough: Fortnite may write the decryption key later
-        // without changing the replay file itself. Keep it pending until peek() sees unlocked.
-        Some(Facts { locked: true, .. }) => {
-            stable_for >= KEY_MISSING_QUIET && quiet_for >= KEY_MISSING_QUIET
-        }
+        // Fortnite writes the decryption key only when the replay is finalized.
+        // The key can appear without changing file size, so keep peeking and never decode
+        // a locked replay merely because it has been quiet for a while.
+        Some(Facts { locked: true, .. }) => false
         // An unreadable/partial header is handled conservatively by the caller.
         None => stable_for >= UNKNOWN_HEADER_QUIET && quiet_for >= UNKNOWN_HEADER_QUIET,
     }
@@ -580,7 +578,7 @@ mod tests {
         });
         assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_000.0));
         assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_009.9));
-        assert!(replay_is_ready(&path, 500, 1_000.0, facts, 1_010.1));
+        assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 10_000.0));
     }
 
     #[test]
