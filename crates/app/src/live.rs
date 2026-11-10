@@ -263,6 +263,21 @@ pub struct ScanResult {
 /// Decode in a child process so a malformed replay or a stuck native decompressor cannot
 /// hold the live scan thread forever. The child can be killed safely on timeout.
 fn decode_isolated(path: &Path) -> Result<Replay, String> {
+    // Unit tests run inside Rust's test harness, not the LootLedger executable.
+    // The harness does not implement the private --decode-replay worker arguments.
+    // Keep tests on the same decoder while production builds use process isolation.
+    #[cfg(test)]
+    {
+        let data = std::fs::read(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok(lootledger_core::replay::decode(
+            &path.to_string_lossy(),
+            &data,
+        ));
+    }
+
+    #[cfg(not(test))]
+    {
     const TIMEOUT: Duration = Duration::from_secs(180);
     let executable = std::env::current_exe().map_err(|e| format!("decoder executable: {e}"))?;
     let stamp = SystemTime::now()
@@ -323,6 +338,7 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
     let bytes = bytes?;
     serde_json::from_slice(&bytes)
         .map_err(|e| format!("{}: invalid decoder output: {e}", path.display()))
+    }
 }
 
 /// Import new or changed replays with this store (its own connection, on a background thread).
