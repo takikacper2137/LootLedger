@@ -4,7 +4,12 @@
 //! States: idle (Fortnite not running), waiting (running, no match being recorded), live (a replay is being
 //! recorded), saving (the replay just finished; it is being read) and ended (that match is counted).
 
-use lootledger_core::{container, model::Replay, replay, store::Store};
+use lootledger_core::{
+    container,
+    model::Replay,
+    replay,
+    store::{Error, Store},
+};
 use std::{
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -163,9 +168,14 @@ impl Tracker {
     }
 }
 
+#[derive(Default)]
 pub struct ScanResult {
     pub live: Option<Replay>,
+    /// Trouble with the ledger itself, which would repeat for every file: the import stopped.
     pub error: Option<String>,
+    /// Replay files that could not be read or imported this time (locked by another program, say).
+    /// They never stop the others and are tried again at the next check.
+    pub skipped: Vec<String>,
 }
 
 /// Import new or changed replays with this store (its own connection, on a background thread).
@@ -177,8 +187,8 @@ pub fn scan(
 ) -> ScanResult {
     if !folder.is_dir() {
         return ScanResult {
-            live: None,
             error: Some(format!("Replay folder not found: {}", folder.display())),
+            ..ScanResult::default()
         };
     }
     let now = now();
@@ -186,8 +196,8 @@ pub fn scan(
         (Ok(k), Ok(o)) => (k, o),
         (Err(e), _) | (_, Err(e)) => {
             return ScanResult {
-                live: None,
                 error: Some(e.to_string()),
+                ..ScanResult::default()
             };
         }
     };
@@ -231,6 +241,7 @@ pub fn scan(
     let queue = std::sync::Mutex::new(todo.into_iter());
     let (sender, receiver) = std::sync::mpsc::sync_channel(workers);
     let mut error = None;
+    let mut skipped = Vec::new();
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let sender = sender.clone();
@@ -251,25 +262,38 @@ pub fn scan(
         drop(sender);
         let receiver = receiver; // dropped on an early stop, which releases any worker waiting to send
         for (done, (result, name, size, mtime)) in receiver.iter().enumerate() {
+            let done = done + 1; // every file counts toward the progress, whatever became of it
             let result = match result {
                 Ok(r) => r,
                 Err(e) => {
-                    error = Some(e);
-                    break;
+                    skipped.push(e); // one unreadable file must not hold back the rest
+                    progress(done, total);
+                    continue;
                 }
             };
             if result.live && now - mtime < LIVE_WINDOW {
                 live = Some(result);
+                progress(done, total);
                 continue;
             }
-            if let Err(e) = store.import_replay(&result, &name, size, mtime) {
-                error = Some(format!("{name}: {e}"));
-                break;
+            match store.import_replay(&result, &name, size, mtime) {
+                Ok(_) => {}
+                // This replay holds values the ledger refuses; the others are fine.
+                Err(Error::Invalid(e)) => skipped.push(format!("{name}: {e}")),
+                // The database itself is in trouble: every further file would fail the same way.
+                Err(e) => {
+                    error = Some(format!("{name}: {e}"));
+                    break;
+                }
             }
-            progress(done + 1, total);
+            progress(done, total);
         }
     });
-    ScanResult { live, error }
+    ScanResult {
+        live,
+        error,
+        skipped,
+    }
 }
 
 /// A short two-note chime at this volume (0–100), written once per volume and played without blocking.
@@ -365,6 +389,37 @@ mod tests {
         let mut again = 0;
         scan(&mut store, &dir, |_, _| again += 1);
         assert_eq!(again, 0);
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_unreadable_file_does_not_stop_the_others() {
+        let dir = std::env::temp_dir().join(format!("lootledger-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..12 {
+            std::fs::write(
+                dir.join(format!("UnsavedReplay-{i:02}.replay")),
+                [i as u8; 64],
+            )
+            .unwrap();
+        }
+        // A directory with a replay's name stands in for a file that cannot be read (locked, say).
+        std::fs::create_dir(dir.join("UnsavedReplay-bad.replay")).unwrap();
+        let mut store = Store::open(dir.join("ledger.sqlite")).unwrap();
+        let mut seen = Vec::new();
+        let result = scan(&mut store, &dir, |done, total| seen.push((done, total)));
+        assert!(result.error.is_none(), "{:?}", result.error);
+        assert_eq!(store.replay_files().unwrap().len(), 12);
+        assert_eq!(result.skipped.len(), 1, "{:?}", result.skipped);
+        assert!(result.skipped[0].contains("UnsavedReplay-bad"));
+        assert_eq!(seen.last(), Some(&(13, 13)), "progress counts every file");
+        // The next check tries the unreadable one again and still imports nothing twice.
+        let mut again = 0;
+        let second = scan(&mut store, &dir, |_, _| again += 1);
+        assert_eq!((again, second.skipped.len()), (1, 1));
+        assert_eq!(store.replay_files().unwrap().len(), 12);
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }

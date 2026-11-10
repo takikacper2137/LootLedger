@@ -772,12 +772,15 @@ fn scan() {
                     let _ = slint::invoke_from_event_loop(move || {
                         with_app(|a| a.scan_note = format!("Reading replays {done}/{total}…"));
                         refresh_status();
+                        if done % 10 == 0 {
+                            refresh(false); // the numbers grow during a long first scan, not only at its end
+                        }
                     });
                 }
             }),
             Err(e) => live::ScanResult {
-                live: None,
                 error: Some(e.to_string()),
+                ..live::ScanResult::default()
             },
         };
         let _ = slint::invoke_from_event_loop(move || scan_finished(result));
@@ -788,7 +791,13 @@ fn scan_finished(result: live::ScanResult) {
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
-        app.scan_error = result.error.clone();
+        app.scan_error = result.error.clone().or_else(|| {
+            let first = result.skipped.first()?;
+            Some(format!(
+                "{} replay file(s) could not be read and will be tried again: {first}",
+                result.skipped.len()
+            ))
+        });
         app.scan_note.clear();
         app.last_scan = Some(Local::now());
         app.tracker.state == live::State::Saving && result.error.is_none()
