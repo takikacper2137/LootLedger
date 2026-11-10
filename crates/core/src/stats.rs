@@ -177,6 +177,13 @@ pub struct Snapshot {
     pub heat_matches: [[i64; 24]; 7],
     pub match_days: BTreeMap<NaiveDate, i64>,
     pub team_total: i64,
+    /// Teammates' chests per day (from the matches whose replays were read), so a tile can show
+    /// "you + team" for any period. Your own `per_day` also holds manual entries; this does not.
+    pub team_per_day: BTreeMap<NaiveDate, i64>,
+    pub team_today: i64,
+    pub team_week: i64,
+    pub team_month: i64,
+    pub team_session: i64,
     pub team_types: Counter,
     pub team_opened: i64,
     pub team_broken: i64,
@@ -599,6 +606,8 @@ pub fn compute(
     let (mut containers, mut team_types, mut team_containers) =
         (Counter::default(), Counter::default(), Counter::default());
     let (mut team_opened, mut team_broken, mut unattributed) = (0, 0, 0);
+    let mut team_per_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
+    let mut team_session = 0;
     let mut rows = Vec::new();
     let empty = Value::Null;
     for m in matches {
@@ -614,6 +623,12 @@ pub fn compute(
                 team_types.add(name, count);
                 team_opened += opened_n;
                 team_broken += if include_broken { broken_n } else { 0 };
+            }
+        }
+        if analyzed_row && team > 0 {
+            *team_per_day.entry(m.started.date_naive()).or_default() += team;
+            if session_start.is_some_and(|s| m.started >= s) {
+                team_session += team;
             }
         }
         let squad_rows = meta.get("players").map(|_| squad(meta, include_broken));
@@ -702,6 +717,9 @@ pub fn compute(
     let last_week = week - Duration::days(7);
     let last_month = first_of_month(month - Duration::days(1));
     let day = Duration::days(1);
+    let team_today = team_per_day.get(&today).copied().unwrap_or(0);
+    let team_week = span(&team_per_day, week, today);
+    let team_month = span(&team_per_day, month, today);
     let n = analyzed.len() as f64;
     let last = rows
         .iter()
@@ -753,6 +771,11 @@ pub fn compute(
         heat_matches,
         match_days,
         team_total,
+        team_per_day,
+        team_today,
+        team_week,
+        team_month,
+        team_session,
         team_types,
         team_opened,
         team_broken,
@@ -1047,5 +1070,51 @@ mod tests {
         );
         assert!(goals(&s, 6, 0)[0].reached);
         assert!(achievements(&s).iter().all(|a| !a.unlocked));
+    }
+
+    fn mate_match(id: &str, started: DateTime<Local>, opened: i64, broken: i64) -> MatchIn {
+        MatchIn {
+            id: id.into(),
+            started,
+            seconds: 900.0,
+            total: 10,
+            broken: 0,
+            meta: Some(serde_json::json!({"mode": "Squad",
+                "team": {"Chest": {"opened": opened, "broken": broken}}})),
+            note: String::new(),
+            tags: String::new(),
+            favorite: false,
+        }
+    }
+
+    #[test]
+    fn team_totals_follow_each_period_and_the_broken_setting() {
+        let matches = [
+            mate_match("a", at(6, 10, 0), 4, 1), // Friday, today
+            mate_match("b", at(3, 9, 0), 2, 0),  // Tuesday of the same week
+            mate_match("c", at(1, 9, 0), 6, 2),  // Sunday: last week, same month
+        ];
+        let now = at(6, 12, 0);
+        let s = compute(&[], &matches, now, Some(at(6, 9, 0)), true);
+        assert_eq!(s.team_today, 5);
+        assert_eq!(s.team_week, 7);
+        assert_eq!(s.team_month, 15);
+        assert_eq!(s.team_total, 15);
+        assert_eq!(s.team_session, 5); // only match "a" started after the session did
+        assert_eq!(s.team_per_day.len(), 3);
+
+        // With broken-open chests turned off, teammates' broken chests drop out like your own.
+        let s = compute(&[], &matches, now, None, false);
+        assert_eq!((s.team_today, s.team_week, s.team_month), (4, 6, 12));
+        assert_eq!(s.team_session, 0);
+    }
+
+    #[test]
+    fn solo_and_unread_matches_add_no_team_chests() {
+        let mut manual = mate_match("m", at(6, 10, 0), 0, 0);
+        manual.meta = None; // a manual entry has no replay data
+        let s = compute(&[], &[manual], at(6, 12, 0), None, true);
+        assert_eq!((s.team_today, s.team_week, s.team_month), (0, 0, 0));
+        assert!(s.team_per_day.is_empty());
     }
 }
