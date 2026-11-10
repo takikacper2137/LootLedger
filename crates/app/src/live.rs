@@ -75,7 +75,7 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
         // Fortnite writes the decryption key only when the replay is finalized.
         // The key can appear without changing file size, so keep peeking and never decode
         // a locked replay merely because it has been quiet for a while.
-        Some(Facts { locked: true, .. }) => false
+        Some(Facts { locked: true, .. }) => false,
         // An unreadable/partial header is handled conservatively by the caller.
         None => stable_for >= UNKNOWN_HEADER_QUIET && quiet_for >= UNKNOWN_HEADER_QUIET,
     }
@@ -579,6 +579,30 @@ mod tests {
         assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_000.0));
         assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_009.9));
         assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 10_000.0));
+    }
+
+    #[test]
+    fn replay_readiness_waits_for_the_encryption_key() {
+        let path = std::env::temp_dir().join(format!(
+            "lootledger-key-readiness-{}-{}.replay",
+            std::process::id(),
+            now()
+        ));
+        let locked = Some(Facts {
+            live: false,
+            locked: true,
+            recorded: 120.0,
+        });
+        let unlocked = Some(Facts {
+            live: false,
+            locked: false,
+            recorded: 120.0,
+        });
+        // The key may appear in the header without changing the file's size or timestamp.
+        assert!(!replay_is_ready(&path, 500, 1_000.0, locked, 1_000.0));
+        assert!(!replay_is_ready(&path, 500, 1_000.0, locked, 1_030.0));
+        assert!(!replay_is_ready(&path, 500, 1_000.0, unlocked, 1_030.0));
+        assert!(replay_is_ready(&path, 500, 1_000.0, unlocked, 1_004.1 + 1_030.0));
     }
 
     #[test]
