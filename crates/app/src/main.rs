@@ -2565,8 +2565,13 @@ fn refresh_overlay() {
             .take(3)
             .map(|m| format!("{} {}", m.name, p.int(m.total)))
             .collect();
-        if p.overlay_teammates && !mates.is_empty() {
-            lines.push(mates.join(" · "));
+        if p.overlay_teammates {
+            if let Some(total) = row.and_then(|r| cards::together(r.count, r.team, p)) {
+                lines.push(total);
+            }
+            if !mates.is_empty() {
+                lines.push(mates.join(" · "));
+            }
         }
         Some((
             if view.ended.is_some() {

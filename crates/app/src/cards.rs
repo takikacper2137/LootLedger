@@ -307,6 +307,12 @@ fn with_team(mine: i64, team: i64, p: &Prefs) -> String {
     )
 }
 
+/// "Together: 15": your chests and your teammates' in one match, for the pop-out counter.
+/// None when no teammate chest was recorded.
+pub fn together(count: i64, team: i64, p: &Prefs) -> Option<String> {
+    (team > 0).then(|| format!("Together: {}", p.int(count + team)))
+}
+
 /// Joins detail lines, skipping empty ones.
 fn lines(parts: &[String]) -> String {
     parts
@@ -1416,6 +1422,8 @@ mod tests {
             "1,788 broken open"
         );
         assert_eq!(lines(&["a".into(), "b".into()]), "a\nb");
+        assert_eq!(together(13, 2, &p).as_deref(), Some("Together: 15"));
+        assert_eq!(together(13, 0, &p), None);
     }
 
     #[test]
