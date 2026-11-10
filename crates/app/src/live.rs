@@ -459,6 +459,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn replay_readiness_waits_for_a_stable_finalized_file() {
+        let path = std::env::temp_dir().join(format!(
+            "lootledger-readiness-{}-{}.replay",
+            std::process::id(),
+            now()
+        ));
+        let facts = Some(Facts {
+            live: false,
+            locked: false,
+            recorded: 120.0,
+        });
+        let modified = 1_000.0;
+        assert!(!replay_is_ready(&path, 500, modified, facts, 1_000.0));
+        assert!(!replay_is_ready(&path, 500, modified, facts, 1_003.9));
+        assert!(replay_is_ready(&path, 500, modified, facts, 1_004.1));
+        // Any further write restarts the quiet/stability window.
+        assert!(!replay_is_ready(&path, 600, 1_005.0, facts, 1_005.0));
+        assert!(!replay_is_ready(&path, 600, 1_005.0, facts, 1_008.9));
+        assert!(replay_is_ready(&path, 600, 1_005.0, facts, 1_009.1));
+    }
+
+    #[test]
+    fn replay_readiness_waits_longer_for_the_encryption_key() {
+        let path = std::env::temp_dir().join(format!(
+            "lootledger-key-readiness-{}-{}.replay",
+            std::process::id(),
+            now()
+        ));
+        let facts = Some(Facts {
+            live: false,
+            locked: true,
+            recorded: 120.0,
+        });
+        assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_000.0));
+        assert!(!replay_is_ready(&path, 500, 1_000.0, facts, 1_009.9));
+        assert!(replay_is_ready(&path, 500, 1_000.0, facts, 1_010.1));
+    }
+
+    #[test]
     fn scan_reads_every_file_once_on_several_threads() {
         let dir = std::env::temp_dir().join(format!("lootledger-scan-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
