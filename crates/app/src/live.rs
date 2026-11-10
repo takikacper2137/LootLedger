@@ -12,10 +12,11 @@ use lootledger_core::{
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::{Mutex, OnceLock},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(test))]
+use std::{process::{Command, Stdio}, time::Instant};
 
 /// Fortnite flushes the replay about every 20 s; no write for 90 s means recording stopped.
 const STALE: f64 = 90.0;
@@ -267,10 +268,10 @@ fn decode_isolated(path: &Path) -> Result<Replay, String> {
     #[cfg(test)]
     {
         let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        return Ok(lootledger_core::replay::decode(
+        Ok(lootledger_core::replay::decode(
             &path.to_string_lossy(),
             &data,
-        ));
+        ))
     }
 
     #[cfg(not(test))]
