@@ -14,7 +14,8 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    process::{Command, Stdio},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 /// Fortnite flushes the replay about every 20 s; no write for 90 s means recording stopped.
@@ -260,6 +261,68 @@ pub struct ScanResult {
     pub pending: bool,
 }
 
+/// Decode in a child process so a malformed replay or a stuck native decompressor cannot
+/// hold the live scan thread forever. The child can be killed safely on timeout.
+fn decode_isolated(path: &Path) -> Result<Replay, String> {
+    const TIMEOUT: Duration = Duration::from_secs(180);
+    let executable = std::env::current_exe().map_err(|e| format!("decoder executable: {e}"))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_nanos();
+    let output = std::env::temp_dir().join(format!(
+        "lootledger-decode-{}-{stamp}.json",
+        std::process::id()
+    ));
+    let mut child = Command::new(executable)
+        .arg(format!("--decode-replay={}", path.to_string_lossy()))
+        .arg(format!("--decode-output={}", output.to_string_lossy()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("{}: could not start isolated decoder: {e}", path.display()))?;
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < TIMEOUT => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(&output);
+                return Err(format!(
+                    "{}: replay decoder exceeded {} seconds and was stopped",
+                    path.display(),
+                    TIMEOUT.as_secs()
+                ));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(&output);
+                return Err(format!("{}: decoder process status failed: {e}", path.display()));
+            }
+        }
+    };
+    if !status.success() {
+        let _ = std::fs::remove_file(&output);
+        return Err(format!(
+            "{}: isolated replay decoder exited with {status}",
+            path.display()
+        ));
+    }
+    let bytes = std::fs::read(&output)
+        .map_err(|e| format!("{}: decoder output unavailable: {e}", path.display()));
+    let _ = std::fs::remove_file(&output);
+    let bytes = bytes?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| format!("{}: invalid decoder output: {e}", path.display()))
+}
+
 /// Import new or changed replays with this store (its own connection, on a background thread).
 /// Imports are idempotent, so a renamed copy or a re-scan never double counts.
 pub fn scan(
@@ -344,9 +407,7 @@ pub fn scan(
                 while let Some((path, name, size, mtime)) =
                     queue.lock().ok().and_then(|mut q| q.next())
                 {
-                    let result = std::fs::read(&path)
-                        .map(|data| replay::decode(&path.to_string_lossy(), &data))
-                        .map_err(|e| format!("{}: {e}", path.display()));
+                    let result = decode_isolated(&path);
                     if sender.send((result, name, size, mtime)).is_err() {
                         break; // the import stopped on an error
                     }
