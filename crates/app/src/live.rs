@@ -61,7 +61,10 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
     let quiet_for = now - modified;
     match facts {
         // An active replay is not ready, even if the key happens to be present.
-        Some(Facts { live: true, .. }) => false,
+        Some(Facts { live: true, .. }) => {
+            // A replay still marked live but untouched for a long time was abandoned (crash/quit).
+            stable_for >= KEY_MISSING_QUIET && quiet_for >= KEY_MISSING_QUIET
+        },
         // Fortnite has cleared the live flag and written the key: require a stable file
         // and a short quiet period before decoding.
         Some(Facts { locked: false, .. }) => {
@@ -304,7 +307,6 @@ pub fn scan(
                 length_seconds: facts.recorded,
                 ..Replay::default()
             });
-            pending = true;
             continue;
         }
         // A valid but incomplete header can happen while Fortnite is finalizing the replay.
