@@ -769,15 +769,21 @@ fn scan() {
         // Its own connection: imports never block the window.
         let result = match Store::open(&path) {
             Ok(mut store) => live::scan(&mut store, &folder, |done, total| {
-                if total > 1 {
-                    let _ = slint::invoke_from_event_loop(move || {
+                // Publish each completed import to the UI immediately. In particular, the tracker
+                // can finish the current match without waiting for unrelated older replays.
+                let _ = slint::invoke_from_event_loop(move || {
+                    if total > 1 {
                         with_app(|a| a.scan_note = format!("Reading replays {done}/{total}…"));
                         refresh_status();
                         if done % 10 == 0 {
                             refresh(false); // the numbers grow during a long first scan, not only at its end
                         }
-                    });
-                }
+                    }
+                    if match_counted() {
+                        refresh(false);
+                        show_match_popup();
+                    }
+                });
             }),
             Err(e) => live::ScanResult {
                 error: Some(e.to_string()),
