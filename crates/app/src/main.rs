@@ -89,6 +89,20 @@ fn with_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Private worker mode: decode one replay and write JSON for the parent process.
+    // It runs before Slint initialization and is terminated by the parent on timeout.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(input) = args.iter().find_map(|a| a.strip_prefix("--decode-replay=")) {
+        let output = args
+            .iter()
+            .find_map(|a| a.strip_prefix("--decode-output="))
+            .ok_or("missing --decode-output")?;
+        let data = std::fs::read(input)?;
+        let replay = lootledger_core::replay::decode(input, &data);
+        std::fs::write(output, serde_json::to_vec(&replay)?)?;
+        return Ok(());
+    }
+
     // --snap=DIR: render each page off-screen, unfocused, save screenshots and quit (visual QA).
     let snap_dir = std::env::args().find_map(|a| a.strip_prefix("--snap=").map(PathBuf::from));
     OFFSCREEN.with(|o| o.set(snap_dir.is_some()));
@@ -796,6 +810,9 @@ fn scan() {
 
 fn scan_finished(result: live::ScanResult) {
     let retry_pending = result.pending || !result.skipped.is_empty();
+    // Match ChestCounter's slower cadence while Fortnite is still recording a replay.
+    // Once the live flag is cleared, retry quickly while the file/key is being finalized.
+    let retry_delay = if result.live.is_some() { 15 } else { 3 };
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -815,7 +832,7 @@ fn scan_finished(result: live::ScanResult) {
     if (again || retry_pending) && !counted {
         // A replay can still be flushing or waiting for its encryption key. Retry independently
         // of the normal scan interval, without requiring the user to restart LootLedger.
-        Timer::single_shot(Duration::from_secs(3), scan);
+        Timer::single_shot(Duration::from_secs(retry_delay), scan);
     }
     refresh(false);
     if counted {
