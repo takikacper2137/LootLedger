@@ -795,7 +795,7 @@ fn scan() {
 }
 
 fn scan_finished(result: live::ScanResult) {
-    let retry_pending = result.pending;
+    let retry_pending = result.pending || !result.skipped.is_empty();
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
