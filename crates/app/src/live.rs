@@ -241,6 +241,9 @@ pub fn scan(
         }
         todo.push((path, name, meta.len(), mtime));
     }
+    // Start with the newest replay. The live tracker follows that file, so an older replay
+    // must not occupy the first worker slot while the just-finished match waits in the queue.
+    todo.sort_by(|a, b| b.3.total_cmp(&a.3));
     let total = todo.len();
     // Decoding is the slow part (about 1 s per replay), so a few threads read and decode while this one
     // imports through its single connection. Half the cores at most: Fortnite may be running.
