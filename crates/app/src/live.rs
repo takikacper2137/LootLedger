@@ -57,10 +57,7 @@ fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, 
         locked: facts.map(|f| f.locked),
     });
     let locked = facts.map(|f| f.locked);
-    if entry.size != size
-        || (entry.modified - modified).abs() > 1e-6
-        || entry.locked != locked
-    {
+    if entry.size != size || (entry.modified - modified).abs() > 1e-6 || entry.locked != locked {
         *entry = Readiness {
             size,
             modified,
