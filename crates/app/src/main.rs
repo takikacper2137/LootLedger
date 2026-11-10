@@ -67,6 +67,7 @@ type StatsKey = ((i64, u64), bool, NaiveDate);
 /// A stat value counting up after new data: (grid, row, column, from, to, decimals).
 struct CountUp {
     grid: usize,
+    id: String,
     row: usize,
     col: usize,
     from: f64,
@@ -204,10 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Timer::single_shot(Duration::from_secs(5), || check_update(false));
         }
     }
-    let auto = with_app(|a| a.config.auto_watch()).unwrap_or(false);
-    if auto {
-        Timer::single_shot(Duration::from_millis(150), scan);
-    }
+    // Always do one startup scan, even when periodic auto-watch is disabled.
+    // Otherwise a replay finalized before LootLedger starts is never observed by poll_live():
+    // the tracker only enters Saving after it has first seen the replay as Live.
+    Timer::single_shot(Duration::from_millis(150), scan);
     if let Some(seconds) = std::env::args().find_map(|s| {
         s.strip_prefix("--quit-after=")
             .and_then(|s| s.parse::<u64>().ok())
@@ -768,15 +769,21 @@ fn scan() {
         // Its own connection: imports never block the window.
         let result = match Store::open(&path) {
             Ok(mut store) => live::scan(&mut store, &folder, |done, total| {
-                if total > 1 {
-                    let _ = slint::invoke_from_event_loop(move || {
+                // Publish each completed import to the UI immediately. In particular, the tracker
+                // can finish the current match without waiting for unrelated older replays.
+                let _ = slint::invoke_from_event_loop(move || {
+                    if total > 1 {
                         with_app(|a| a.scan_note = format!("Reading replays {done}/{total}…"));
                         refresh_status();
                         if done % 10 == 0 {
                             refresh(false); // the numbers grow during a long first scan, not only at its end
                         }
-                    });
-                }
+                    }
+                    if match_counted() {
+                        refresh(false);
+                        show_match_popup();
+                    }
+                });
             }),
             Err(e) => live::ScanResult {
                 error: Some(e.to_string()),
@@ -788,6 +795,7 @@ fn scan() {
 }
 
 fn scan_finished(result: live::ScanResult) {
+    let retry_pending = result.pending || !result.skipped.is_empty();
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -800,12 +808,14 @@ fn scan_finished(result: live::ScanResult) {
         });
         app.scan_note.clear();
         app.last_scan = Some(Local::now());
-        app.tracker.state == live::State::Saving && result.error.is_none()
+        app.tracker.state == live::State::Saving
     })
     .unwrap_or(false);
     let counted = again && match_counted();
-    if again && !counted {
-        Timer::single_shot(Duration::from_secs(1), scan); // that check started before the replay was finished
+    if (again || retry_pending) && !counted {
+        // A replay can still be flushing or waiting for its encryption key. Retry independently
+        // of the normal scan interval, without requiring the user to restart LootLedger.
+        Timer::single_shot(Duration::from_secs(3), scan);
     }
     refresh(false);
     if counted {
@@ -1174,6 +1184,7 @@ fn refresh(force: bool) {
                     if changed && (from - to).abs() > 1e-9 {
                         countups.push(CountUp {
                             grid,
+                            id: card.id.to_string(),
                             row: r,
                             col: c,
                             from,
@@ -1459,6 +1470,11 @@ fn finish_countups(ui: &AppWindow, t: f64) {
             let Some(mut card) = row.cards.row_data(c.col) else {
                 continue;
             };
+            // A layout rebuild can move cards while a count-up animation is still running.
+            // Never write a previous tile's value into a different tile at the same grid position.
+            if card.id.as_str() != c.id {
+                continue;
+            }
             card.value = app
                 .prefs
                 .number(c.from + (c.to - c.from) * t, c.decimals)
