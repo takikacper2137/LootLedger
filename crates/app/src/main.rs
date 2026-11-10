@@ -64,11 +64,12 @@ struct App {
 /// What the statistics depend on: the ledger version, whether broken-open chests count, and today's date.
 type StatsKey = ((i64, u64), bool, NaiveDate);
 
-/// A stat value counting up after new data: (grid, row, column, from, to, decimals).
+/// A stat value counting up after new data. It names its card by id, not by position: the window can
+/// change its number of columns while the 600 ms animation runs, and a position would then point at
+/// another card (a "Chests per match" tile showing today's total).
 struct CountUp {
     grid: usize,
-    row: usize,
-    col: usize,
+    id: String,
     from: f64,
     to: f64,
     decimals: usize,
@@ -740,8 +741,10 @@ fn scan() {
     if std::env::args().any(|a| a.starts_with("--snap=")) {
         return; // screenshot runs show the ledger as it is and never import replays
     }
+    let mut busy = false;
     let Some((folder, path, include_broken)) = with_app(|app| {
         if app.scanning || app.store.is_none() {
+            busy = app.scanning;
             return None;
         }
         let folder = app.config.replay_folder();
@@ -759,15 +762,19 @@ fn scan() {
     })
     .flatten()
     else {
+        if busy {
+            trace("scan asked for while the previous one is still running");
+        }
         refresh_status();
         return;
     };
     let _ = include_broken;
     refresh_status();
+    let log = live::ScanLog::new(path.with_file_name("scan.log"));
     std::thread::spawn(move || {
         // Its own connection: imports never block the window.
         let result = match Store::open(&path) {
-            Ok(mut store) => live::scan(&mut store, &folder, |done, total| {
+            Ok(mut store) => live::scan(&mut store, &folder, &log, |done, total| {
                 if total > 1 {
                     let _ = slint::invoke_from_event_loop(move || {
                         with_app(|a| a.scan_note = format!("Reading replays {done}/{total}…"));
@@ -787,7 +794,21 @@ fn scan() {
     });
 }
 
+/// One line in scan.log (next to the ledger): what the app is doing, for finding why a match was not counted.
+fn trace(text: &str) {
+    if let Some(log) = with_app(|a| live::ScanLog::new(a.folder.join("scan.log"))) {
+        log.line(text);
+    }
+}
+
 fn scan_finished(result: live::ScanResult) {
+    trace(&format!(
+        "scan handed back: error={} set-aside={} still-recording={}",
+        result.error.as_deref().unwrap_or("none"),
+        result.skipped.len(),
+        result.live.is_some()
+    ));
+    let pending = result.pending;
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -804,8 +825,22 @@ fn scan_finished(result: live::ScanResult) {
     })
     .unwrap_or(false);
     let counted = again && match_counted();
+    if again {
+        trace(&format!(
+            "the finished match was {}",
+            if counted {
+                "counted"
+            } else {
+                "not in the ledger yet, checking again in 1 s"
+            }
+        ));
+    }
     if again && !counted {
         Timer::single_shot(Duration::from_secs(1), scan); // that check started before the replay was finished
+    } else if pending > 0 {
+        // A finished replay was still settling (Fortnite may add the last data for a few seconds): look again
+        // soon instead of waiting for the next periodic check.
+        Timer::single_shot(Duration::from_secs(3), scan);
     }
     refresh(false);
     if counted {
@@ -927,6 +962,15 @@ fn poll_live() {
         (before, app.tracker.poll(&folder))
     })
     .unwrap_or((live::State::Idle, live::State::Idle));
+    if after != before {
+        let file = with_app(|a| a.tracker.file_name()).flatten();
+        trace(&format!(
+            "match tracking: {} -> {} ({})",
+            state_name(before),
+            state_name(after),
+            file.as_deref().unwrap_or("no file")
+        ));
+    }
     if after == live::State::Saving && before != live::State::Saving {
         scan(); // the match just ended: read its replay now instead of at the next check
     }
@@ -1164,8 +1208,8 @@ fn refresh(force: bool) {
         // Count the stat values up from what was shown before (Full motion only).
         let previous = previous_values(&ui, grid);
         let rows = cards::pack(built, columns[grid]);
-        for (r, row) in rows.iter().enumerate() {
-            for (c, card) in row.cards.iter().enumerate() {
+        for row in rows.iter() {
+            for card in row.cards.iter() {
                 if let Some((_, to, decimals)) = targets
                     .iter()
                     .find(|(id, _, _)| id.as_str() == card.id.as_str())
@@ -1174,8 +1218,7 @@ fn refresh(force: bool) {
                     if changed && (from - to).abs() > 1e-9 {
                         countups.push(CountUp {
                             grid,
-                            row: r,
-                            col: c,
+                            id: card.id.to_string(),
                             from,
                             to: *to,
                             decimals: *decimals,
@@ -1453,17 +1496,20 @@ fn finish_countups(ui: &AppWindow, t: f64) {
             } else {
                 ui.get_stats_rows()
             };
-            let Some(row) = rows.row_data(c.row) else {
-                continue;
-            };
-            let Some(mut card) = row.cards.row_data(c.col) else {
+            // Find the card where it is now, whatever the layout became since the animation began.
+            let found = rows.iter().find_map(|row| {
+                let col = row.cards.iter().position(|card| card.id == c.id.as_str())?;
+                Some((row, col))
+            });
+            let Some((row, col)) = found else { continue };
+            let Some(mut card) = row.cards.row_data(col) else {
                 continue;
             };
             card.value = app
                 .prefs
                 .number(c.from + (c.to - c.from) * t, c.decimals)
                 .into();
-            row.cards.set_row_data(c.col, card);
+            row.cards.set_row_data(col, card);
         }
         if t >= 1.0 {
             app.countups.clear();
