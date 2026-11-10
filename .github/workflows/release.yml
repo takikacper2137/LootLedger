@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: ["fix/replay-readiness-and-retry"]
+    branches: ["fix/replay-readiness-and-retry", "fix/isolated-replay-decoder"]
     tags: ["v*"]
   workflow_dispatch:
 
