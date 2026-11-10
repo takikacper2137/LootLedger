@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: ["fix/replay-readiness-and-retry"]
     tags: ["v*"]
   workflow_dispatch:
 
