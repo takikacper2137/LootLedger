@@ -11,7 +11,9 @@ use lootledger_core::{
     store::{Error, Store},
 };
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +23,68 @@ const STALE: f64 = 90.0;
 const RUNNING: f64 = 120.0;
 /// A replay still marked live but untouched for longer was abandoned (crash or quit).
 const LIVE_WINDOW: f64 = 15.0 * 60.0;
+/// A finalized replay needs a short quiet period and two observations with the same size.
+const FINALIZED_QUIET: f64 = 4.0;
+/// If Fortnite has not written the decryption key yet, wait longer before trying again.
+const KEY_MISSING_QUIET: f64 = 10.0;
+/// If the header cannot yet be parsed, wait conservatively before attempting a decode.
+const UNKNOWN_HEADER_QUIET: f64 = 120.0;
+
+#[derive(Clone, Copy)]
+struct Readiness {
+    size: u64,
+    modified: f64,
+    first_seen: f64,
+}
+
+static REPLAY_READINESS: OnceLock<Mutex<HashMap<PathBuf, Readiness>>> = OnceLock::new();
+
+/// Mirror ChestCounter's readiness gate: don't decode while Fortnite is still flushing the replay.
+fn replay_is_ready(path: &Path, size: u64, modified: f64, facts: Option<Facts>, now: f64) -> bool {
+    let cache = REPLAY_READINESS.get_or_init(|| Mutex::new(HashMap::new()));
+    let Ok(mut cache) = cache.lock() else { return false };
+    let entry = cache.entry(path.to_path_buf()).or_insert(Readiness {
+        size,
+        modified,
+        first_seen: now,
+    });
+    if entry.size != size || (entry.modified - modified).abs() > 1e-6 {
+        *entry = Readiness {
+            size,
+            modified,
+            first_seen: now,
+        };
+        return false;
+    }
+
+    let stable_for = now - entry.first_seen;
+    let quiet_for = now - modified;
+    match facts {
+        // An active replay is not ready, even if the key happens to be present.
+        Some(Facts { live: true, .. }) => false,
+        // Fortnite has cleared the live flag and written the key: require a stable file
+        // and a short quiet period before decoding.
+        Some(Facts { locked: false, .. }) => {
+            stable_for >= FINALIZED_QUIET && quiet_for >= FINALIZED_QUIET
+        }
+        // The header is finalized but the encryption key is not available yet.
+        Some(Facts { locked: true, .. }) => {
+            stable_for >= KEY_MISSING_QUIET && quiet_for >= KEY_MISSING_QUIET
+        }
+        // An unreadable/partial header is handled conservatively by the caller.
+        None => stable_for >= UNKNOWN_HEADER_QUIET && quiet_for >= UNKNOWN_HEADER_QUIET,
+    }
+}
+
+/// Distinguish an incomplete real replay header from arbitrary invalid files (e.g. corrupt files).
+fn has_replay_magic(path: &Path) -> bool {
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut magic))
+        .is_ok()
+        && magic == 0x1CA2E27Fu32.to_le_bytes()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -185,6 +249,8 @@ pub struct ScanResult {
     /// Replay files that could not be read or imported this time (locked by another program, say).
     /// They never stop the others and are tried again at the next check.
     pub skipped: Vec<String>,
+    /// At least one replay is still being finalized; the caller should schedule a short retry.
+    pub pending: bool,
 }
 
 /// Import new or changed replays with this store (its own connection, on a background thread).
@@ -212,6 +278,7 @@ pub fn scan(
     };
     let mut todo = Vec::new();
     let mut live = None;
+    let mut pending = false;
     for (path, meta) in replays(folder) {
         let name = path
             .file_name()
@@ -225,18 +292,27 @@ pub fn scan(
         if !older.contains(&name) && unchanged {
             continue;
         }
-        if let Some(facts) = peek(&path)
+        let facts = peek(&path);
+        if let Some(facts) = facts
             && facts.live
-            && facts.locked
             && now - mtime < LIVE_WINDOW
         {
-            // Still recording and encrypted without its key: nothing can be decoded until Fortnite finishes it.
+            // Still recording: keep the live estimate and never send this file to the decoder.
             live = Some(Replay {
                 file: path.to_string_lossy().into_owned(),
                 live: true,
                 length_seconds: facts.recorded,
                 ..Replay::default()
             });
+            pending = true;
+            continue;
+        }
+        // A valid but incomplete header can happen while Fortnite is finalizing the replay.
+        // Do not mistake arbitrary corrupt files for an in-progress write.
+        if (facts.is_some() || has_replay_magic(&path))
+            && !replay_is_ready(&path, meta.len(), mtime, facts, now)
+        {
+            pending = true;
             continue;
         }
         todo.push((path, name, meta.len(), mtime));
@@ -305,6 +381,7 @@ pub fn scan(
         live,
         error,
         skipped,
+        pending,
     }
 }
 
