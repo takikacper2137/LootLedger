@@ -9,7 +9,7 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const MAX_EVENTS_PER_REPLAY: usize = 20_000;
 pub const MAX_PLAYERS_PER_REPLAY: usize = 100;
 
-/// A privacy-preserving projection of a locally parsed replay.
+/// A minimal projection of a locally parsed replay for the team-session protocol.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplayContribution {
