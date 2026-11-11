@@ -165,6 +165,15 @@ impl TeamServer {
 
     pub fn address(&self) -> SocketAddr { self.address }
 
+    pub fn end_session(&self, credentials: &SessionCredentials) -> Result<(), String> {
+        let response = process_request(Request::End {
+            session_id: credentials.session_id.clone(),
+            owner_token: credentials.owner_token.clone(),
+        }, &self.state);
+        if response["ok"] == true { Ok(()) }
+        else { Err(response["error"].as_str().unwrap_or("Could not end session").to_owned()) }
+    }
+
     /// Create the one host-owned session supported by this MVP.
     pub fn create_session(&self, owner_id: &str, owner_name: &str) -> Result<SessionCredentials, String> {
         if owner_id.trim().is_empty() || owner_id.len() > 256 || owner_name.len() > 256 {
@@ -312,7 +321,7 @@ fn snapshot(session: &Session) -> SessionSnapshot {
         for contribution in &contributions {
             // Count only "me" events from the replay recorded by that player. Other
             // perspectives are retained for later corroboration, not added twice.
-            let count = contribution.events.iter().filter(|event| event.by == "me").count();
+            let count = contribution.events.iter().filter(|event| event.by == "me" && crate::model::classify(&event.cls).1).count();
             let name = contribution.owner.name.clone().unwrap_or_else(|| contribution.submitted_by.clone());
             players.insert(contribution.submitted_by.clone(), (name, count));
         }
@@ -327,4 +336,24 @@ fn snapshot(session: &Session) -> SessionSnapshot {
         session_id: session.id.clone(), owner_id: session.owner_id.clone(),
         owner_name: session.owner_name.clone(), active: session.active, participants, matches,
     }
+}
+
+
+/// Send one request to a direct-host session server.
+pub fn send_request(address: SocketAddr, request: &Request) -> Result<Value, String> {
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))
+        .map_err(|e| format!("Could not connect to host: {e}"))?;
+    stream.set_read_timeout(Some(Duration::from_secs(8))).map_err(|e| e.to_string())?;
+    stream.set_write_timeout(Some(Duration::from_secs(8))).map_err(|e| e.to_string())?;
+    let mut bytes = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_REQUEST_BYTES { return Err("Request is too large".into()); }
+    bytes.push(b'\\n');
+    stream.write_all(&bytes).map_err(|e| format!("Could not send request: {e}"))?;
+    let mut response = String::new();
+    BufReader::new(stream).take((MAX_REQUEST_BYTES + 1) as u64)
+        .read_line(&mut response).map_err(|e| format!("Could not read host response: {e}"))?;
+    if response.len() > MAX_REQUEST_BYTES { return Err("Host response is too large".into()); }
+    let value: Value = serde_json::from_str(&response).map_err(|e| format!("Invalid host response: {e}"))?;
+    if value["ok"] == true { Ok(value) }
+    else { Err(value["error"].as_str().unwrap_or("Host rejected the request").to_owned()) }
 }
