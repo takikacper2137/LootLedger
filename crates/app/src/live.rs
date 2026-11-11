@@ -205,6 +205,8 @@ impl ScanLog {
 #[derive(Default)]
 pub struct ScanResult {
     pub live: Option<Replay>,
+    /// Successfully decoded and imported replays, for optional team-session sync.
+    pub imported: Vec<Replay>,
     /// Trouble with the ledger itself, which would repeat for every file: the import stopped.
     pub error: Option<String>,
     /// Replay files that could not be read or imported this time (locked by another program, say).
@@ -473,6 +475,7 @@ fn scan_with(
     }
     let mut error = None;
     let mut skipped = Vec::new();
+    let mut imported = Vec::new();
     let mut handled = 0; // files whose fate is settled: imported, set aside or given up on
     while handled < total {
         let done = match receiver.recv_timeout(Duration::from_millis(500)) {
@@ -563,14 +566,19 @@ fn scan_with(
             continue;
         }
         match store.import_replay(&result, &job.name, job.size, job.mtime) {
-            Ok(id) => log.line(&format!(
+            Ok(id) => {
+                if result.ok && result.session_id.is_some() && result.owner.as_ref().and_then(|p| p.epic_id.as_ref()).is_some() {
+                    imported.push(result.clone());
+                }
+                log.line(&format!(
                 "  {}: saved as {}",
                 job.name,
                 id.map_or(
                     "not counted (no chests or no owner found)".to_owned(),
                     |_| { "a match".to_owned() }
                 )
-            )),
+            ));
+            },
             // This replay holds values the ledger refuses; the others are fine.
             Err(Error::Invalid(e)) => {
                 log.line(&format!("  {}: refused by the ledger: {e}", job.name));
@@ -595,6 +603,7 @@ fn scan_with(
     ));
     ScanResult {
         live,
+        imported,
         error,
         skipped,
         pending,
