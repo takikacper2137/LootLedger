@@ -464,7 +464,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             padding: Tokens.l;
             spacing: Tokens.m;
             Text { text: "Host a team session"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
-            Text { text: "Only the host runs the server and can end the session. Share your reachable public address and invite code with your team."; color: Tokens.on-surface-variant; wrap: word-wrap; }
+            Text { text: "Only the host runs the server and can end the session. Share your LAN address and invite code with friends on the same trusted network. Internet hosting is not secure yet."; color: Tokens.on-surface-variant; wrap: word-wrap; }
             TextField { text: TeamSession.host-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.host-id = t; } }
             TextField { text: TeamSession.host-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.host-name = t; } }
             Button { text: "Create session on this PC"; kind: "filled"; clicked => { TeamSession.action("host"); } }
