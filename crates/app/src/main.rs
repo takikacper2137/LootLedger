@@ -252,7 +252,7 @@ fn snapshots(ui: &AppWindow, dir: PathBuf) -> Timer {
     timer.start(TimerMode::Repeated, Duration::from_millis(900), move || {
         let Some(ui) = window() else { return };
         let n = step.get();
-        let shots: Vec<(i32, &str)> = [0, 3, 5, 1, 2, 4]
+        let shots: Vec<(i32, &str)> = [0, 3, 6, 1, 2, 4, 5]
             .iter()
             .flat_map(|p| [(*p, "dark"), (*p, "light")])
             .collect();
