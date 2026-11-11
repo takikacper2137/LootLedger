@@ -380,3 +380,56 @@ pub fn send_request(address: SocketAddr, request: &Request) -> Result<Value, Str
     if value["ok"] == true { Ok(value) }
     else { Err(value["error"].as_str().unwrap_or("Host rejected the request").to_owned()) }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn participants_can_join_but_cannot_end_the_host_session() {
+        let server = TeamServer::start("127.0.0.1:0".parse().unwrap()).unwrap();
+        let host = server.create_session("host-epic", "Host").unwrap();
+        let joined = send_request(
+            server.address(),
+            &Request::Join {
+                join_code: host.join_code.clone(),
+                player_id: "friend-epic".into(),
+                player_name: "Friend".into(),
+            },
+        )
+        .unwrap();
+        let participant: ParticipantCredentials =
+            serde_json::from_value(joined["credentials"].clone()).unwrap();
+
+        let attempt = send_request(
+            server.address(),
+            &Request::End {
+                session_id: participant.session_id,
+                owner_token: participant.participant_token,
+            },
+        );
+        assert!(attempt.is_err(), "a participant must not be able to end the session");
+
+        let snapshot = server.snapshot_local(&host).unwrap();
+        assert_eq!(snapshot.participants.len(), 2);
+        assert!(snapshot.active);
+        server.end_session(&host).unwrap();
+        assert!(server.snapshot_local(&host).is_err());
+    }
+
+    #[test]
+    fn invalid_join_codes_are_rejected() {
+        let server = TeamServer::start("127.0.0.1:0".parse().unwrap()).unwrap();
+        let _host = server.create_session("host-epic", "Host").unwrap();
+        let result = send_request(
+            server.address(),
+            &Request::Join {
+                join_code: "not-the-code".into(),
+                player_id: "friend-epic".into(),
+                player_name: "Friend".into(),
+            },
+        );
+        assert!(result.is_err());
+    }
+}
