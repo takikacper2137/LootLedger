@@ -348,22 +348,27 @@ fn process_request(request: Request, state: &Arc<Mutex<State>>) -> Value {
             if player_id.trim().is_empty() || player_id.len() > 256 || player_name.len() > 256 {
                 return json!({"ok": false, "error": "Invalid player identity"});
             }
-            if session.members.contains_key(&player_id) {
-                return json!({"ok": false, "error": "This player has already joined the session"});
-            }
-            if session.members.len() >= MAX_PARTICIPANTS {
-                return json!({"ok": false, "error": "Session is full"});
-            }
-
             let token = Uuid::new_v4().to_string();
-            session.members.insert(
-                player_id,
-                Member {
-                    name: player_name,
-                    token: token.clone(),
-                    connected: true,
-                },
-            );
+            if let Some(member) = session.members.get_mut(&player_id) {
+                if member.connected {
+                    return json!({"ok": false, "error": "This player is already connected"});
+                }
+                member.name = player_name;
+                member.token = token.clone();
+                member.connected = true;
+            } else {
+                if session.members.len() >= MAX_PARTICIPANTS {
+                    return json!({"ok": false, "error": "Session is full"});
+                }
+                session.members.insert(
+                    player_id,
+                    Member {
+                        name: player_name,
+                        token: token.clone(),
+                        connected: true,
+                    },
+                );
+            }
             json!({
                 "ok": true,
                 "credentials": {
