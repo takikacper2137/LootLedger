@@ -1843,7 +1843,6 @@ fn wire(ui: &AppWindow) {
     });
 }
 
-
 fn local_lan_address(port: u16) -> String {
     let address = std::net::UdpSocket::bind("0.0.0.0:0")
         .and_then(|socket| {
@@ -1999,7 +1998,8 @@ fn team_action(action: &str) {
 }
 
 fn refresh_team_snapshot() {
-    let result = with_app(|app| -> Result<lootledger_core::team_server::SessionSnapshot, String> {
+    type TeamSnapshot = lootledger_core::team_server::SessionSnapshot;
+    let result = with_app(|app| -> Result<TeamSnapshot, String> {
         if let (Some(server), Some(credentials)) =
             (app.team_server.as_ref(), app.team_credentials.as_ref())
         {
