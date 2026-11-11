@@ -1990,7 +1990,11 @@ fn team_action(action: &str) {
                     panel.set_status("You left the team session.".into());
                     snack("Left team session");
                 }
-                Err(error) => snack(error),
+                Err(error) => {
+                    panel.set_connected(false);
+                    panel.set_status("Disconnected locally; the host did not confirm the leave request.".into());
+                    snack(error);
+                }
             }
         }
         "refresh" => refresh_team_snapshot(),
