@@ -488,6 +488,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             TextField { text: TeamSession.player-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.player-id = t; } }
             TextField { text: TeamSession.player-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.player-name = t; } }
             Button { text: "Join team session"; kind: "filled"; clicked => { TeamSession.action("join"); } }
+            if TeamSession.connected: Button { text: "Refresh team stats"; kind: "outlined"; clicked => { TeamSession.action("refresh"); } }
             if TeamSession.connected && !TeamSession.is-host: Button { text: "Leave session"; kind: "outlined"; clicked => { TeamSession.action("leave"); } }
         }
     }
