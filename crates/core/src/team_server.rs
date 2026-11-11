@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
@@ -128,6 +128,7 @@ pub struct TeamServer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    state: Arc<Mutex<State>>,
 }
 
 impl TeamServer {
@@ -138,6 +139,7 @@ impl TeamServer {
         let address = listener.local_addr().map_err(|e| e.to_string())?;
         let stop = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(State::default()));
+        let local_state = state.clone();
         let thread_stop = stop.clone();
         let thread = thread::Builder::new()
             .name("lootledger-team-server".into())
@@ -158,7 +160,7 @@ impl TeamServer {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Self { address, stop, thread: Some(thread) })
+        Ok(Self { address, stop, thread: Some(thread), state: local_state })
     }
 
     pub fn address(&self) -> SocketAddr { self.address }
@@ -168,7 +170,7 @@ impl TeamServer {
         if owner_id.trim().is_empty() || owner_id.len() > 256 || owner_name.len() > 256 {
             return Err("Invalid host identity".into());
         }
-        let mut state = self.state()?;
+        let mut state = self.state.lock().map_err(|_| "Session state unavailable".to_owned())?;
         if state.session.as_ref().is_some_and(|s| s.active) {
             return Err("A team session is already active on this PC".into());
         }
@@ -196,11 +198,7 @@ impl TeamServer {
         Ok(credentials)
     }
 
-    fn state(&self) -> Result<std::sync::MutexGuard<'_, State>, String> {
-        // The state is owned by the worker closure; local session creation is handled by requests
-        // in this first transport revision.
-        Err("Use the create_session request endpoint".into())
-    }
+
 }
 
 impl Drop for TeamServer {
