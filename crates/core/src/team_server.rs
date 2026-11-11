@@ -275,7 +275,10 @@ fn process_request(request: Request, state: &Arc<Mutex<State>>) -> Value {
             if player_id.trim().is_empty() || player_id.len() > 256 || player_name.len() > 256 {
                 return json!({"ok":false,"error":"Invalid player identity"});
             }
-            if !session.members.contains_key(&player_id) && session.members.len() >= MAX_PARTICIPANTS {
+            if session.members.contains_key(&player_id) {
+                return json!({"ok":false,"error":"This player has already joined the session"});
+            }
+            if session.members.len() >= MAX_PARTICIPANTS {
                 return json!({"ok":false,"error":"Session is full"});
             }
             let token = Uuid::new_v4().to_string();
@@ -367,7 +370,7 @@ pub fn send_request(address: SocketAddr, request: &Request) -> Result<Value, Str
     stream.set_write_timeout(Some(Duration::from_secs(8))).map_err(|e| e.to_string())?;
     let mut bytes = serde_json::to_vec(request).map_err(|e| e.to_string())?;
     if bytes.len() > MAX_REQUEST_BYTES { return Err("Request is too large".into()); }
-    bytes.push(b'\\n');
+    bytes.push(b'\n');
     stream.write_all(&bytes).map_err(|e| format!("Could not send request: {e}"))?;
     let mut response = String::new();
     BufReader::new(stream).take((MAX_REQUEST_BYTES + 1) as u64)
