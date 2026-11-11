@@ -1992,8 +1992,8 @@ fn sync_team_replays(replays: Vec<Replay>) {
         if let (Some(server), Some(credentials)) = (app.team_server.as_ref(), app.team_credentials.as_ref()) {
             let mut sent = 0usize;
             let mut errors = Vec::new();
-            for replay in replays {
-                match lootledger_core::team::ReplayContribution::from_replay(&replay)
+            for replay in &replays {
+                match lootledger_core::team::ReplayContribution::from_replay(replay)
                     .and_then(|contribution| server.upload_local(credentials, contribution).map(|_| ()))
                 {
                     Ok(()) => sent += 1,
