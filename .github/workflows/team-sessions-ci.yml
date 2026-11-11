@@ -16,6 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate relay JavaScript syntax
+        shell: pwsh
+        run: node --check infra/team-relay/src/index.js
+
       - name: Install the pinned Rust toolchain
         shell: pwsh
         run: rustup toolchain install
