@@ -2019,15 +2019,43 @@ fn refresh_team_snapshot() {
                 .iter()
                 .map(|game| game.unique_openings)
                 .sum();
-            let members = snapshot
+            let connected_names = snapshot
                 .participants
                 .iter()
                 .filter(|participant| participant.connected)
-                .count();
+                .map(|participant| participant.player_name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let match_details = snapshot
+                .matches
+                .iter()
+                .map(|game| {
+                    let players = game
+                        .players
+                        .iter()
+                        .map(|player| format!("{}: {}", player.player_name, player.openings))
+                        .collect::<Vec<_>>()
+                        .join(" · ");
+                    format!(
+                        "Match {} · {} openings\n{}",
+                        &game.match_session_id.chars().take(8).collect::<String>(),
+                        game.unique_openings,
+                        players
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let details = if match_details.is_empty() {
+                "No shared matches yet. New replays will appear after players finish a match.".to_owned()
+            } else {
+                match_details
+            };
             if let Some(ui) = window() {
                 ui.global::<TeamSession>().set_status(
                     format!(
-                        "{members} connected players · {matches} shared matches · {openings} credited chest openings"
+                        "{}/{} connected · {matches} shared matches · {openings} credited chest openings\nPlayers: {connected_names}\n\n{details}",
+                        snapshot.participants.iter().filter(|participant| participant.connected).count(),
+                        snapshot.participants.len()
                     )
                     .into(),
                 );
