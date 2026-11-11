@@ -130,7 +130,7 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. It checks formatting, l
 
 Played a match together? Each of you records your own chests exactly, but only part of your teammates' (and a slow PC may record very little). Match sharing combines the recordings so everyone's number comes from the best one. It is off by default.
 
-- **By file:** Settings → Shared matches → *Add partner replay…* and pick your friend's replay of the same match.
+- **By file:** the **Party** page (left menu) → *Add partner replay…* and pick your friend's replay of the same match.
 - **Over the internet, no files:** both of you install the free [Tailscale](https://tailscale.com/) app and sign in. One of you turns on *Let friends connect to me* and tells the other the Tailscale address and the room password; the other enters them under *Connect to a friend*. Matches then sync about once a minute.
 
 Only the match summary (nicknames, player ids and chest counts) is exchanged, never a replay file, and only for matches you played together. Friends' numbers are kept beside your ledger and never count towards your own totals. Connections need the room password and go through Tailscale's encrypted network.

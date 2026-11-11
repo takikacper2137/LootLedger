@@ -387,8 +387,38 @@ export component SettingsPage inherits VerticalLayout {
         }
     }
     Section {
-        title: "Shared matches";
+        title: "About";
+        icon: Icons.info;
+        Text {
+            text: "LootLedger " + Settings.version + " · counts the chests you open in Fortnite from the replays on this PC. Your data stays on this PC unless you turn on match sharing.";
+            font-size: Tokens.body;
+            color: Tokens.on-surface;
+            wrap: word-wrap;
+        }
+        Row {
+            name: "Update automatically";
+            hint: "Asks GitHub for a newer LootLedger and installs it when you close the app. Only the version check and the download go over the internet; none of your data is sent.";
+            Switch { checked: Settings.auto-update; label: "Update automatically"; toggled(on) => { Settings.set("auto_update", on ? "true" : "false"); } }
+        }
+        HorizontalLayout {
+            alignment: start;
+            Button { text: "What's new"; kind: "text"; clicked => { Settings.action("What's new"); } }
+        }
+    }
+}
+
+/// The Party page: combine your recordings with friends you played with, by file or over Tailscale.
+export component SharingPage inherits VerticalLayout {
+    spacing: Tokens.m;
+    Section {
+        title: "Play with friends";
         icon: Icons.groups;
+        Text {
+            text: "How it works: you and your friends each keep your own recordings. After a match you played together, the app combines them, so everyone's number comes from the best recording. Over the internet: install the free Tailscale app on both PCs, then one of you switches on \"Let friends connect to me\" and the other types in that PC's Tailscale address and the room password.";
+            font-size: Tokens.body;
+            color: Tokens.on-surface;
+            wrap: word-wrap;
+        }
         Row {
             name: "Match with a friend's replay";
             hint: "Played together? Add your friend's replay of the same match. Everyone's chests are then taken from the best recording, so a friend whose PC recorded little still gets the right number. Their chests never count towards your own totals.";
@@ -419,25 +449,6 @@ export component SettingsPage inherits VerticalLayout {
             font-size: Tokens.body;
             color: Tokens.on-surface-variant;
             wrap: word-wrap;
-        }
-    }
-    Section {
-        title: "About";
-        icon: Icons.info;
-        Text {
-            text: "LootLedger " + Settings.version + " · counts the chests you open in Fortnite from the replays on this PC. Your data stays on this PC unless you turn on match sharing.";
-            font-size: Tokens.body;
-            color: Tokens.on-surface;
-            wrap: word-wrap;
-        }
-        Row {
-            name: "Update automatically";
-            hint: "Asks GitHub for a newer LootLedger and installs it when you close the app. Only the version check and the download go over the internet; none of your data is sent.";
-            Switch { checked: Settings.auto-update; label: "Update automatically"; toggled(on) => { Settings.set("auto_update", on ? "true" : "false"); } }
-        }
-        HorizontalLayout {
-            alignment: start;
-            Button { text: "What's new"; kind: "text"; clicked => { Settings.action("What's new"); } }
         }
     }
 }

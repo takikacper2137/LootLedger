@@ -255,7 +255,7 @@ fn snapshots(ui: &AppWindow, dir: PathBuf) -> Timer {
     timer.start(TimerMode::Repeated, Duration::from_millis(900), move || {
         let Some(ui) = window() else { return };
         let n = step.get();
-        let shots: Vec<(i32, &str)> = [0, 3, 5, 1, 2, 4]
+        let shots: Vec<(i32, &str)> = [0, 3, 5, 6, 1, 2, 4]
             .iter()
             .flat_map(|p| [(*p, "dark"), (*p, "light")])
             .collect();
@@ -2800,19 +2800,25 @@ fn refresh_overlay() {
         let snap = app.snap.as_ref()?;
         let view = live_view(app);
         if app.tracker.state == live::State::Live {
-            let count = match (&view.live_count, view.locked) {
-                (Some((n, _)), false) => p.int(*n),
-                _ => "…".into(),
+            let (count, so_far) = match (&view.live_count, view.locked) {
+                (Some((n, _)), false) => (p.int(*n), *n),
+                _ => ("…".into(), 0),
             };
-            let lines = if view.locked {
-                "Chests appear when the match ends".to_owned()
-            } else {
-                String::new()
-            };
+            let mut lines = Vec::new();
+            if view.locked {
+                lines.push("Chests appear when the match ends".to_owned());
+            }
+            // Your lifetime total keeps counting during the match: what the ledger has plus this match so far.
+            lines.push(cards::all_time(
+                snap.all + so_far,
+                snap.team_total,
+                p.overlay_teammates,
+                p,
+            ));
             return Some((
                 format!("Live · {}", prefs::elapsed(view.elapsed.unwrap_or(0.0))),
                 count,
-                lines,
+                lines.join("\n"),
             ));
         }
         let row = view.ended.as_ref().or(snap.last.as_ref());
@@ -2821,6 +2827,12 @@ fn refresh_overlay() {
             p.int(snap.today),
             p.int(snap.session)
         )];
+        lines.push(cards::all_time(
+            snap.all,
+            snap.team_total,
+            p.overlay_teammates,
+            p,
+        ));
         let mates: Vec<String> = row
             .and_then(|r| r.squad.as_ref())
             .into_iter()

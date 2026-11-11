@@ -313,6 +313,15 @@ pub fn together(count: i64, team: i64, p: &Prefs) -> Option<String> {
     (team > 0).then(|| format!("Together: {}", p.int(count + team)))
 }
 
+/// "All time: 4,477": every chest you have opened, for the pop-out counter, with the teammates' added when asked.
+pub fn all_time(count: i64, team: i64, with_team: bool, p: &Prefs) -> String {
+    let mut line = format!("All time: {}", p.int(count));
+    if with_team && team > 0 {
+        line.push_str(&format!(" · together {}", p.int(count + team)));
+    }
+    line
+}
+
 /// Joins detail lines, skipping empty ones.
 fn lines(parts: &[String]) -> String {
     parts
@@ -1424,6 +1433,12 @@ mod tests {
         assert_eq!(lines(&["a".into(), "b".into()]), "a\nb");
         assert_eq!(together(13, 2, &p).as_deref(), Some("Together: 15"));
         assert_eq!(together(13, 0, &p), None);
+        assert_eq!(all_time(4477, 640, false, &p), "All time: 4,477");
+        assert_eq!(
+            all_time(4477, 640, true, &p),
+            "All time: 4,477 · together 5,117"
+        );
+        assert_eq!(all_time(4477, 0, true, &p), "All time: 4,477");
     }
 
     #[test]
