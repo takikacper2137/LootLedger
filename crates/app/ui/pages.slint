@@ -472,6 +472,7 @@ export component TeamSessionsPage inherits VerticalLayout {
                 Text { text: "Invite code"; color: Tokens.on-surface-variant; }
                 Text { text: TeamSession.invite-code; font-size: Tokens.headline; font-weight: 700; color: Tokens.primary; }
                 TextField { text: TeamSession.server-address; label: "Address to share with friends"; placeholder: "Your LAN IP:38761"; edited(t) => { TeamSession.server-address = t; } }
+                Button { text: "Copy invite code"; kind: "filled"; clicked => { TeamSession.action("copy-code"); } }
                 Button { text: "Copy invite details"; kind: "outlined"; clicked => { TeamSession.action("copy-invite"); } }
                 Button { text: "End team session"; kind: "danger"; clicked => { TeamSession.action("end"); } }
             }
