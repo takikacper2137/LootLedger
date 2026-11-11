@@ -1844,6 +1844,17 @@ fn wire(ui: &AppWindow) {
 }
 
 
+fn local_lan_address(port: u16) -> String {
+    let address = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|socket| {
+            socket.connect("192.0.2.1:80")?;
+            socket.local_addr()
+        })
+        .ok()
+        .map(|address| format!("{}:{port}", address.ip()));
+    address.unwrap_or_else(|| format!("127.0.0.1:{port}"))
+}
+
 fn team_action(action: &str) {
     let Some(ui) = window() else { return };
     let panel = ui.global::<TeamSession>();
@@ -1875,7 +1886,7 @@ fn team_action(action: &str) {
                         app.team_address = Some(address);
                     });
                     panel.set_invite_code(credentials.join_code.into());
-                    panel.set_server_address(format!("127.0.0.1:{}", address.port()).into());
+                    panel.set_server_address(local_lan_address(address.port()).into());
                     panel.set_is_host(true);
                     panel.set_connected(true);
                     panel.set_status(
