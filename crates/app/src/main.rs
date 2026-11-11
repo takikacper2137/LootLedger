@@ -2362,7 +2362,7 @@ const PAGE_NAMES: [&str; 7] = [
 const WHATS_NEW: [&str; 3] = [
     "Faster first launch: replays are now read on several cores at once.",
     "Snappier page switching: Overview and Statistics only rebuild when something changed.",
-    "Your data still never leaves this PC; only the version check and the download go over the internet.",
+    "Raw replays and local paths stay on this PC; Team Sessions shares parsed match data only when you opt in.",
 ];
 
 #[derive(Clone)]
