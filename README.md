@@ -26,7 +26,17 @@
 2. Download **[LootLedger.exe](https://github.com/femboypuppy/LootLedger/releases/latest)** and run it. Nothing to install. SmartScreen may warn because the exe is unsigned: click **More info → Run anyway**.
 3. Play. Each finished match is counted a few seconds after it ends.
 
-LootLedger never touches the game. It doesn't read game memory, inject anything or automate gameplay. It only reads the `.replay` files Fortnite writes once a match is over. Your data stays on your PC; the only internet traffic is the update check.
+LootLedger never touches the game. It doesn't read game memory, inject anything or automate gameplay. It only reads the `.replay` files Fortnite writes once a match is over. By default, your replay files and ledger stay on your PC. If you explicitly join a Team Session, LootLedger shares parsed match data (never raw replay files or local file paths) with the session host.
+
+## Team Sessions (experimental)
+
+Team Sessions let one player host a session while friends join using the host address and invite code. Each PC reads its own Fortnite replays locally and sends parsed match contributions to the host. The host groups contributions by Fortnite match session and credits chest openings from each player's own replay perspective, avoiding the common duplicate-counting problem caused by seeing the same teammate opening in multiple replays.
+
+- Only the session owner can end the session; participants can leave.
+- Raw `.replay` files and local paths are never sent.
+- The host must keep LootLedger open while the session is active.
+- This first transport prototype uses unencrypted direct TCP. **Use it only on a trusted local network. Do not forward its port or expose it to the public internet.** Encrypted internet hosting is not ready yet.
+- Only replays imported after joining/hosting are synced in this prototype; older matches are not backfilled.
 
 ## What you get
 
