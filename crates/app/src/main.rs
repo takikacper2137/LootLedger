@@ -22,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
+    net::SocketAddr,
 };
 
 slint::include_modules!();
@@ -59,6 +60,10 @@ struct App {
     shown_commands: Vec<usize>,
     theme_dirty: bool,
     hotkeys_busy: Vec<String>,
+    team_server: Option<lootledger_core::team_server::TeamServer>,
+    team_credentials: Option<lootledger_core::team_server::SessionCredentials>,
+    team_participant: Option<lootledger_core::team_server::ParticipantCredentials>,
+    team_address: Option<SocketAddr>,
 }
 
 /// What the statistics depend on: the ledger version, whether broken-open chests count, and today's date.
@@ -155,6 +160,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         shown_commands: Vec::new(),
         theme_dirty: false,
         hotkeys_busy: Vec::new(),
+        team_server: None,
+        team_credentials: None,
+        team_participant: None,
+        team_address: None,
     };
     let app = Rc::new(RefCell::new(app));
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
@@ -809,6 +818,7 @@ fn scan_finished(result: live::ScanResult) {
         result.live.is_some()
     ));
     let pending = result.pending;
+    let imported = result.imported.clone();
     let again = with_app(|app| {
         app.scanning = false;
         app.live_replay = result.live;
@@ -824,6 +834,7 @@ fn scan_finished(result: live::ScanResult) {
         app.tracker.state == live::State::Saving && result.error.is_none()
     })
     .unwrap_or(false);
+    sync_team_replays(imported);
     let counted = again && match_counted();
     if again {
         trace(&format!(
@@ -1722,6 +1733,8 @@ fn wire(ui: &AppWindow) {
     });
     ui.global::<Settings>()
         .on_action(|action| settings_action(&action));
+    ui.global::<TeamSession>()
+        .on_action(|action| team_action(&action));
     ui.on_shortcut(|which| match which.as_str() {
         "palette" => open_palette(),
         _ => show_shortcuts(),
@@ -2017,12 +2030,13 @@ fn confirm(title: &str, text: &str) -> bool {
 
 // ---- Command palette, shortcuts and startup dialogs --------------------------------------------
 
-const PAGE_NAMES: [&str; 6] = [
+const PAGE_NAMES: [&str; 7] = [
     "Overview",
     "Matches",
     "Openings",
     "Statistics",
     "Teammates",
+    "Team Sessions",
     "Settings",
 ];
 const WHATS_NEW: [&str; 3] = [
