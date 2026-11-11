@@ -72,12 +72,23 @@ function processRequest(session, request) {
     }
     case "upload": {
       const c = request.contribution;
-      if (!c || typeof c !== "object" || !validText(c.match_session_id, 256) || !validText(c.submitted_by, 256) ||
-          !Array.isArray(c.events) || c.events.length > 100000) return fail("Invalid replay contribution", 400);
-      const member = session.members[c.submitted_by];
+      if (!c || typeof c !== "object" || c.protocolVersion !== 1 ||
+          !validText(c.matchSessionId, 256) || !c.matchSessionId.trim() ||
+          !validText(c.submittedBy, 256) || !c.submittedBy.trim() ||
+          c.owner?.epicId !== c.submittedBy ||
+          !Number.isFinite(c.durationSeconds) || c.durationSeconds < 0 || c.durationSeconds > 21600 ||
+          !Array.isArray(c.events) || c.events.length > 20000 ||
+          !Array.isArray(c.teammates) || c.teammates.length > 100) return fail("Invalid replay contribution", 400);
+      const member = session.members[c.submittedBy];
       if (!member || member.token !== request.participant_token) return fail("Invalid participant token", 403);
       if (JSON.stringify(c).length > MAX_REQUEST_BYTES - 1024) return fail("Contribution is too large", 413);
-      session.contributions[`${c.match_session_id}:${c.submitted_by}`] = c;
+      for (const event of c.events) {
+        if (!event || !Number.isFinite(event.t) || event.t < 0 || event.t > c.durationSeconds + 2 ||
+            !validText(event.cls, 512) || !validText(event.kind, 256) ||
+            (event.player != null && !validText(event.player, 256)) ||
+            (event.playerId != null && !validText(event.playerId, 256))) return fail("Invalid replay event in contribution", 400);
+      }
+      session.contributions[`${c.matchSessionId}:${c.submittedBy}`] = c;
       return ok({});
     }
     case "snapshot":
@@ -101,12 +112,12 @@ function makeSnapshot(session) {
   const participants = Object.entries(session.members).map(([id, member]) => ({ playerId: id, playerName: member.name, connected: member.connected }));
   const byMatch = new Map();
   for (const c of Object.values(session.contributions)) {
-    const list = byMatch.get(c.match_session_id) || [];
+    const list = byMatch.get(c.matchSessionId) || [];
     list.push(c); byMatch.set(c.match_session_id, list);
   }
   const matches = [...byMatch.entries()].map(([matchSessionId, contributions]) => {
     const players = contributions.map(c => ({
-      playerId: c.submitted_by, playerName: c.owner?.name || c.submitted_by,
+      playerId: c.submittedBy, playerName: c.owner?.name || c.submitted_by,
       openings: c.events.filter(e => e.by === "me" && isChest(e.cls)).length,
     }));
     return { matchSessionId, contributions: contributions.length, players, uniqueOpenings: players.reduce((sum, p) => sum + p.openings, 0) };
