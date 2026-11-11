@@ -165,6 +165,16 @@ impl TeamServer {
 
     pub fn address(&self) -> SocketAddr { self.address }
 
+    pub fn snapshot_local(&self, credentials: &SessionCredentials) -> Result<SessionSnapshot, String> {
+        let state = self.state.lock().map_err(|_| "Session state unavailable".to_owned())?;
+        let session = state.session.as_ref().filter(|s| s.id == credentials.session_id && s.active)
+            .ok_or_else(|| "Session is not active".to_owned())?;
+        if session.owner_token != credentials.owner_token {
+            return Err("Invalid host credentials".into());
+        }
+        Ok(snapshot(session))
+    }
+
     pub fn upload_local(&self, credentials: &SessionCredentials, contribution: ReplayContribution) -> Result<(), String> {
         let response = process_request(Request::Upload {
             session_id: credentials.session_id.clone(),
