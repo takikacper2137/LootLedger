@@ -8,6 +8,21 @@ import { BarRows, SeriesChart, Timeline } from "charts.slint";
 
 export struct Row { id: string, cells: [string], ink: color, has-ink: bool, share: float }
 
+export global TeamSession {
+    in-out property <string> host-id;
+    in-out property <string> host-name;
+    in-out property <string> join-address;
+    in-out property <string> join-code;
+    in-out property <string> player-id;
+    in-out property <string> player-name;
+    in-out property <string> invite-code;
+    in-out property <string> server-address;
+    in-out property <string> status: "Not connected to a team session";
+    in-out property <bool> is-host;
+    in-out property <bool> connected;
+    callback action(string);
+}
+
 export global Pages {
     // Matches
     in property <[Row]> matches;
@@ -435,6 +450,55 @@ export component TeammatesPage inherits VerticalLayout {
                     }
                 }
             }
+        }
+    }
+}
+
+
+export component TeamSessionsPage inherits VerticalLayout {
+    spacing: Tokens.l;
+    Rectangle {
+        border-radius: Tokens.r-lg;
+        background: Tokens.container-low;
+        VerticalLayout {
+            padding: Tokens.l;
+            spacing: Tokens.m;
+            Text { text: "Host a team session"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
+            Text { text: "Only the host runs the server and can end the session. Share your reachable public address and invite code with your team."; color: Tokens.on-surface-variant; wrap: word-wrap; }
+            TextField { text: TeamSession.host-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.host-id = t; } }
+            TextField { text: TeamSession.host-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.host-name = t; } }
+            Button { text: "Create session on this PC"; kind: "filled"; clicked => { TeamSession.action("host"); } }
+            if TeamSession.is-host: VerticalLayout {
+                Text { text: "Invite code"; color: Tokens.on-surface-variant; }
+                Text { text: TeamSession.invite-code; font-size: Tokens.headline; font-weight: 700; color: Tokens.primary; }
+                TextField { text: TeamSession.server-address; label: "Address to share with friends"; placeholder: "Your public IP:38761"; edited(t) => { TeamSession.server-address = t; } }
+                Button { text: "End team session"; kind: "danger"; clicked => { TeamSession.action("end"); } }
+            }
+        }
+    }
+    Rectangle {
+        border-radius: Tokens.r-lg;
+        background: Tokens.container-low;
+        VerticalLayout {
+            padding: Tokens.l;
+            spacing: Tokens.m;
+            Text { text: "Join a session"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
+            TextField { text: TeamSession.join-address; label: "Host address"; placeholder: "example: 203.0.113.10:38761"; edited(t) => { TeamSession.join-address = t; } }
+            TextField { text: TeamSession.join-code; label: "Invite code"; placeholder: "Paste the host's code"; edited(t) => { TeamSession.join-code = t; } }
+            TextField { text: TeamSession.player-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.player-id = t; } }
+            TextField { text: TeamSession.player-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.player-name = t; } }
+            Button { text: "Join team session"; kind: "filled"; clicked => { TeamSession.action("join"); } }
+            if TeamSession.connected && !TeamSession.is-host: Button { text: "Leave session"; kind: "outlined"; clicked => { TeamSession.action("leave"); } }
+        }
+    }
+    Rectangle {
+        border-radius: Tokens.r-lg;
+        background: Tokens.container;
+        VerticalLayout {
+            padding: Tokens.l;
+            spacing: Tokens.s;
+            Text { text: "Connection status"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
+            Text { text: TeamSession.status; color: Tokens.on-surface-variant; wrap: word-wrap; }
         }
     }
 }
