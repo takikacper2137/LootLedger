@@ -165,6 +165,16 @@ impl TeamServer {
 
     pub fn address(&self) -> SocketAddr { self.address }
 
+    pub fn upload_local(&self, credentials: &SessionCredentials, contribution: ReplayContribution) -> Result<(), String> {
+        let response = process_request(Request::Upload {
+            session_id: credentials.session_id.clone(),
+            participant_token: credentials.owner_token.clone(),
+            contribution,
+        }, &self.state);
+        if response["ok"] == true { Ok(()) }
+        else { Err(response["error"].as_str().unwrap_or("Could not upload replay").to_owned()) }
+    }
+
     pub fn end_session(&self, credentials: &SessionCredentials) -> Result<(), String> {
         let response = process_request(Request::End {
             session_id: credentials.session_id.clone(),
