@@ -464,14 +464,15 @@ export component TeamSessionsPage inherits VerticalLayout {
             padding: Tokens.l;
             spacing: Tokens.m;
             Text { text: "Host a team session"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
-            Text { text: "Only the host runs the server and can end the session. Epic IDs and display names are visible to session members. Share the LAN address and invite code only on a trusted local network; internet hosting is not secure yet."; color: Tokens.on-surface-variant; wrap: word-wrap; }
+            Text { text: "Create a shared session through the HTTPS relay. Epic IDs and display names are visible to session members. Everyone enters the same relay address and invite code; no router port forwarding is needed."; color: Tokens.on-surface-variant; wrap: word-wrap; }
             TextField { text: TeamSession.host-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.host-id = t; } }
             TextField { text: TeamSession.host-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.host-name = t; } }
-            Button { text: "Create session on this PC"; kind: "filled"; enabled: !TeamSession.connected; clicked => { TeamSession.action("host"); } }
+            TextField { text: TeamSession.server-address; label: "Relay HTTPS URL"; placeholder: "https://your-worker.workers.dev"; edited(t) => { TeamSession.server-address = t; } }
+            Button { text: "Create team session"; kind: "filled"; enabled: !TeamSession.connected; clicked => { TeamSession.action("host"); } }
             if TeamSession.is-host: VerticalLayout {
                 Text { text: "Invite code"; color: Tokens.on-surface-variant; }
                 Text { text: TeamSession.invite-code; font-size: Tokens.headline; font-weight: 700; color: Tokens.primary; }
-                TextField { text: TeamSession.server-address; label: "Address to share with friends"; placeholder: "Your LAN IP:38761"; edited(t) => { TeamSession.server-address = t; } }
+                Text { text: TeamSession.server-address; color: Tokens.on-surface-variant; wrap: word-wrap; }
                 Button { text: "Copy invite code"; kind: "filled"; clicked => { TeamSession.action("copy-code"); } }
                 Button { text: "Copy invite details"; kind: "outlined"; clicked => { TeamSession.action("copy-invite"); } }
                 Button { text: "End team session"; kind: "danger"; clicked => { TeamSession.action("end"); } }
@@ -485,7 +486,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             padding: Tokens.l;
             spacing: Tokens.m;
             Text { text: "Join a session"; font-size: Tokens.title; font-weight: 600; color: Tokens.on-surface; }
-            TextField { text: TeamSession.join-address; label: "Host address"; placeholder: "example: 203.0.113.10:38761"; edited(t) => { TeamSession.join-address = t; } }
+            TextField { text: TeamSession.join-address; label: "Relay HTTPS URL"; placeholder: "https://your-worker.workers.dev"; edited(t) => { TeamSession.join-address = t; } }
             TextField { text: TeamSession.join-code; label: "Invite code"; placeholder: "Paste the host's code"; edited(t) => { TeamSession.join-code = t; } }
             TextField { text: TeamSession.player-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.player-id = t; } }
             TextField { text: TeamSession.player-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.player-name = t; } }
