@@ -1843,6 +1843,203 @@ fn wire(ui: &AppWindow) {
     });
 }
 
+
+fn team_action(action: &str) {
+    let Some(ui) = window() else { return };
+    let panel = ui.global::<TeamSession>();
+    match action {
+        "host" => {
+            let (owner_id, owner_name) = (panel.get_host_id().to_string(), panel.get_host_name().to_string());
+            if owner_id.trim().is_empty() || owner_name.trim().is_empty() {
+                snack("Enter your Epic account ID and display name first");
+                return;
+            }
+            let result = (|| -> Result<_, String> {
+                let bind: SocketAddr = "0.0.0.0:38761".parse().unwrap();
+                let server = lootledger_core::team_server::TeamServer::start(bind)?;
+                let credentials = server.create_session(&owner_id, &owner_name)?;
+                let address = server.address();
+                Ok((server, credentials, address))
+            })();
+            match result {
+                Ok((server, credentials, address)) => {
+                    with_app(|app| {
+                        app.team_server = Some(server);
+                        app.team_credentials = Some(credentials.clone());
+                        app.team_participant = None;
+                        app.team_address = Some(address);
+                    });
+                    panel.set_invite_code(credentials.join_code.into());
+                    panel.set_server_address(format!("127.0.0.1:{}", address.port()).into());
+                    panel.set_is_host(true);
+                    panel.set_connected(true);
+                    panel.set_status("Session is running on this PC. Set the shareable address to your public IP and forward TCP port 38761 on your router.".into());
+                    snack("Team session created");
+                }
+                Err(e) => snack(e),
+            }
+        }
+        "join" => {
+            let address = match panel.get_join_address().trim().parse::<SocketAddr>() {
+                Ok(address) => address,
+                Err(_) => { snack("Enter the host address as IP:port"); return; }
+            };
+            let request = lootledger_core::team_server::Request::Join {
+                join_code: panel.get_join_code().to_string(),
+                player_id: panel.get_player_id().to_string(),
+                player_name: panel.get_player_name().to_string(),
+            };
+            match lootledger_core::team_server::send_request(address, &request)
+                .and_then(|value| serde_json::from_value(value["credentials"].clone()).map_err(|e| e.to_string()))
+            {
+                Ok(credentials) => {
+                    let credentials: lootledger_core::team_server::ParticipantCredentials = credentials;
+                    with_app(|app| {
+                        app.team_server = None;
+                        app.team_credentials = None;
+                        app.team_participant = Some(credentials);
+                        app.team_address = Some(address);
+                    });
+                    panel.set_is_host(false);
+                    panel.set_connected(true);
+                    panel.set_status("Connected. Newly imported replays will sync automatically while this app is open.".into());
+                    snack("Joined team session");
+                }
+                Err(e) => snack(e),
+            }
+        }
+        "end" => {
+            let result = with_app(|app| {
+                let (Some(server), Some(credentials)) = (app.team_server.as_ref(), app.team_credentials.as_ref()) else {
+                    return Err("This PC does not own an active session".to_owned());
+                };
+                server.end_session(credentials)?;
+                app.team_server = None;
+                app.team_credentials = None;
+                app.team_address = None;
+                Ok(())
+            }).unwrap_or_else(|| Err("Application state unavailable".into()));
+            match result {
+                Ok(()) => {
+                    panel.set_is_host(false);
+                    panel.set_connected(false);
+                    panel.set_invite_code("".into());
+                    panel.set_status("Session ended by its owner.".into());
+                    snack("Team session ended");
+                }
+                Err(e) => snack(e),
+            }
+        }
+        "leave" => {
+            let result = with_app(|app| {
+                let (Some(address), Some(credentials)) = (app.team_address, app.team_participant.as_ref()) else {
+                    return Err("You are not connected to a hosted session".to_owned());
+                };
+                lootledger_core::team_server::send_request(address, &lootledger_core::team_server::Request::Leave {
+                    session_id: credentials.session_id.clone(),
+                    participant_token: credentials.participant_token.clone(),
+                })?;
+                app.team_participant = None;
+                app.team_address = None;
+                Ok(())
+            }).unwrap_or_else(|| Err("Application state unavailable".into()));
+            match result {
+                Ok(()) => {
+                    panel.set_connected(false);
+                    panel.set_status("You left the team session.".into());
+                    snack("Left team session");
+                }
+                Err(e) => snack(e),
+            }
+        }
+        "refresh" => refresh_team_snapshot(),
+        _ => {}
+    }
+}
+
+fn refresh_team_snapshot() {
+    let result = with_app(|app| {
+        if let (Some(server), Some(credentials)) = (app.team_server.as_ref(), app.team_credentials.as_ref()) {
+            return server.snapshot_local(credentials).map_err(|e| e.to_owned());
+        }
+        if let (Some(address), Some(credentials)) = (app.team_address, app.team_participant.as_ref()) {
+            let response = lootledger_core::team_server::send_request(address, &lootledger_core::team_server::Request::Snapshot {
+                session_id: credentials.session_id.clone(),
+                participant_token: credentials.participant_token.clone(),
+            })?;
+            return serde_json::from_value(response["snapshot"].clone()).map_err(|e| e.to_string());
+        }
+        Err("Not connected to a team session".to_owned())
+    }).unwrap_or_else(|| Err("Application state unavailable".into()));
+    match result {
+        Ok(snapshot) => {
+            let summary: lootledger_core::team_server::SessionSnapshot = snapshot;
+            let matches = summary.matches.len();
+            let openings: usize = summary.matches.iter().map(|m| m.unique_openings).sum();
+            let members = summary.participants.iter().filter(|p| p.connected).count();
+            let ui = window().unwrap();
+            ui.global::<TeamSession>().set_status(
+                format!("{} connected players · {} shared matches · {} credited chest openings", members, matches, openings).into()
+            );
+        }
+        Err(e) => snack(e),
+    }
+}
+
+fn sync_team_replays(replays: Vec<Replay>) {
+    if replays.is_empty() { return; }
+    let target = with_app(|app| {
+        if let (Some(server), Some(credentials)) = (app.team_server.as_ref(), app.team_credentials.as_ref()) {
+            let mut sent = 0usize;
+            let mut errors = Vec::new();
+            for replay in replays {
+                match lootledger_core::team::ReplayContribution::from_replay(&replay)
+                    .and_then(|contribution| server.upload_local(credentials, contribution).map(|_| ()))
+                {
+                    Ok(()) => sent += 1,
+                    Err(e) => errors.push(e),
+                }
+            }
+            return Some((sent, errors));
+        }
+        if let (Some(address), Some(credentials)) = (app.team_address, app.team_participant.clone()) {
+            return Some((0, vec![format!("__ASYNC__{}:{}", address, credentials.session_id)]));
+        }
+        None
+    }).flatten();
+    let Some((sent, errors)) = target else { return };
+    if errors.first().is_some_and(|e| e.starts_with("__ASYNC__")) {
+        let (address, credentials) = with_app(|app| (app.team_address, app.team_participant.clone())).unwrap_or((None, None));
+        if let (Some(address), Some(credentials)) = (address, credentials) {
+            std::thread::spawn(move || {
+                let mut sent = 0usize;
+                let mut error = None;
+                for replay in replays {
+                    let contribution = match lootledger_core::team::ReplayContribution::from_replay(&replay) {
+                        Ok(value) => value,
+                        Err(e) => { error = Some(e); continue; }
+                    };
+                    let request = lootledger_core::team_server::Request::Upload {
+                        session_id: credentials.session_id.clone(),
+                        participant_token: credentials.participant_token.clone(),
+                        contribution,
+                    };
+                    match lootledger_core::team_server::send_request(address, &request) {
+                        Ok(_) => sent += 1,
+                        Err(e) => error = Some(e),
+                    }
+                }
+                let message = error.map_or_else(|| format!("Synced {sent} team replay(s)",), |e| format!("Team sync: {sent} sent; {e}"));
+                let _ = slint::invoke_from_event_loop(move || snack(message));
+            });
+        }
+    } else if sent > 0 {
+        snack(format!("Synced {sent} replay(s) to your team"));
+    } else if let Some(error) = errors.first() {
+        snack(format!("Team sync: {error}"));
+    }
+}
+
 fn parse_date(text: &str, format: &str) -> Option<NaiveDate> {
     let pattern = match format {
         "mdy" => "%m/%d/%Y",
