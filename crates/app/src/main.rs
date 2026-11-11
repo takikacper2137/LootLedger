@@ -2444,7 +2444,7 @@ fn show_shortcuts() {
     };
     let mut rows = vec![
         vec![
-            ("Ctrl+1 … Ctrl+6".to_owned(), 1),
+            ("Ctrl+1 … Ctrl+7".to_owned(), 1),
             ("Go to a page".to_owned(), 0),
         ],
         vec![
