@@ -4,6 +4,7 @@ pub mod container;
 pub mod model;
 pub mod replay;
 pub mod stats;
+pub mod team;
 pub mod store;
 mod tables;
 pub mod tail;
