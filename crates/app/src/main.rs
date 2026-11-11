@@ -2598,11 +2598,10 @@ fn refresh_overlay() {
             ));
         }
         let row = view.ended.as_ref().or(snap.last.as_ref());
-        let mut lines = vec![format!(
-            "Today: {} · Session: {}",
-            p.int(snap.today),
-            p.int(snap.session)
-        )];
+        let mut lines = vec![
+            format!("Today: {} · Session: {}", p.int(snap.today), p.int(snap.session)),
+            format!("Lifetime: {}", p.int(snap.all)),
+        ];
         let mates: Vec<String> = row
             .and_then(|r| r.squad.as_ref())
             .into_iter()
