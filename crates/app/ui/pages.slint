@@ -471,7 +471,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             if TeamSession.is-host: VerticalLayout {
                 Text { text: "Invite code"; color: Tokens.on-surface-variant; }
                 Text { text: TeamSession.invite-code; font-size: Tokens.headline; font-weight: 700; color: Tokens.primary; }
-                TextField { text: TeamSession.server-address; label: "Address to share with friends"; placeholder: "Your public IP:38761"; edited(t) => { TeamSession.server-address = t; } }
+                TextField { text: TeamSession.server-address; label: "Address to share with friends"; placeholder: "Your LAN IP:38761"; edited(t) => { TeamSession.server-address = t; } }
                 Button { text: "End team session"; kind: "danger"; clicked => { TeamSession.action("end"); } }
             }
         }
