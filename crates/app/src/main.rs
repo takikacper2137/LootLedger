@@ -1977,7 +1977,7 @@ fn team_action(action: &str) {
                 return;
             }
             let invite = format!(
-                "LootLedger team session\\nAddress: {address}\\nInvite code: {code}"
+                "LootLedger team session\nAddress (LAN only): {address}\nInvite code: {code}\n\nInternet sessions are not supported yet."
             );
             match copy_text_to_clipboard(&invite) {
                 Ok(()) => snack("Invite details copied to clipboard"),
