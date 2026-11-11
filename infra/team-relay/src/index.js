@@ -57,7 +57,7 @@ export class SessionRoom {
   }
 }
 
-function processRequest(session, request) {
+export function processRequest(session, request) {
   switch (request.action) {
     case "join": {
       const { join_code, player_id, player_name } = request;
@@ -79,8 +79,9 @@ function processRequest(session, request) {
           !Number.isFinite(c.durationSeconds) || c.durationSeconds < 0 || c.durationSeconds > 21600 ||
           !Array.isArray(c.events) || c.events.length > 20000 ||
           !Array.isArray(c.teammates) || c.teammates.length > 100) return fail("Invalid replay contribution", 400);
+      if (request.session_id !== session.id) return fail("Session ID does not match", 403);
       const member = session.members[c.submittedBy];
-      if (!member || member.token !== request.participant_token) return fail("Invalid participant token", 403);
+      if (!member || member.token !== request.participant_token || !member.connected) return fail("Invalid or disconnected participant token", 403);
       if (JSON.stringify(c).length > MAX_REQUEST_BYTES - 1024) return fail("Contribution is too large", 413);
       for (const event of c.events) {
         if (!event || !Number.isFinite(event.t) || event.t < 0 || event.t > c.durationSeconds + 2 ||
@@ -92,11 +93,13 @@ function processRequest(session, request) {
       return ok({});
     }
     case "snapshot":
+      if (request.session_id !== session.id) return fail("Session ID does not match", 403);
       if (!validMemberToken(session, request.participant_token)) return fail("Invalid participant token", 403);
       return ok({ snapshot: makeSnapshot(session) });
     case "leave": {
+      if (request.session_id !== session.id) return fail("Session ID does not match", 403);
       const member = Object.values(session.members).find(m => m.token === request.participant_token);
-      if (!member || member.owner) return fail("Invalid participant token", 403);
+      if (!member || member.owner || !member.connected) return fail("Invalid participant token", 403);
       member.connected = false;
       return ok({});
     }
@@ -108,7 +111,7 @@ function processRequest(session, request) {
   }
 }
 
-function makeSnapshot(session) {
+export function makeSnapshot(session) {
   const participants = Object.entries(session.members).map(([id, member]) => ({ playerId: id, playerName: member.name, connected: member.connected }));
   const byMatch = new Map();
   for (const c of Object.values(session.contributions)) {
@@ -125,7 +128,7 @@ function makeSnapshot(session) {
   return { sessionId: session.id, ownerId: session.ownerId, ownerName: session.ownerName, active: session.active, participants, matches };
 }
 
-function isChest(cls) {
+export function isChest(cls) {
   const text = typeof cls === "string" ? cls.toLowerCase() : "";
   if (["ammo", "foodbox", "fishing"].some(p => text.includes(p))) return false;
   return ["rarechest", "buriedchest", "spriteposters", "booty_chest", "relic", "extraction", "lootcannon", "tiered_chest", "normalchest", "factionchest", "chest"].some(p => text.includes(p));
