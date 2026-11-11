@@ -351,7 +351,10 @@ fn process_request(request: Request, state: &Arc<Mutex<State>>) -> Value {
             let token = Uuid::new_v4().to_string();
             if let Some(member) = session.members.get_mut(&player_id) {
                 if member.connected {
-                    return json!({"ok": false, "error": "This player is already connected"});
+                    return json!({
+                        "ok": false,
+                        "error": "This player is already connected"
+                    });
                 }
                 member.name = player_name;
                 member.token = token.clone();
