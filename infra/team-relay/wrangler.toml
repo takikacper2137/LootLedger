@@ -1,0 +1,11 @@
+name = "lootledger-team-relay"
+main = "src/index.js"
+compatibility_date = "2026-11-11"
+
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "SessionRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionRoom"]
