@@ -19,10 +19,10 @@ use slint::{ComponentHandle, Model, SharedString, Timer, TimerMode};
 use std::{
     cell::RefCell,
     collections::HashMap,
+    net::SocketAddr,
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
-    net::SocketAddr,
 };
 
 slint::include_modules!();
