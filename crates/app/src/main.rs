@@ -1969,6 +1969,17 @@ fn team_action(action: &str) {
                 Err(error) => snack(error),
             }
         }
+        "copy-code" => {
+            let code = panel.get_invite_code().to_string();
+            if code.trim().is_empty() {
+                snack("Create a team session before copying its code");
+                return;
+            }
+            match copy_text_to_clipboard(&code) {
+                Ok(()) => snack("Invite code copied to clipboard"),
+                Err(error) => snack(error),
+            }
+        }
         "copy-invite" => {
             let address = panel.get_server_address().to_string();
             let code = panel.get_invite_code().to_string();
