@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { processRequest, makeSnapshot, isChest } from "./src/index.js";
+import { processRequest, makeSnapshot, isChest } from "../src/index.js";
 
 function session() {
   return {
