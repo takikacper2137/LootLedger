@@ -1873,7 +1873,7 @@ fn team_action(action: &str) {
                     panel.set_server_address(format!("127.0.0.1:{}", address.port()).into());
                     panel.set_is_host(true);
                     panel.set_connected(true);
-                    panel.set_status("Session is running on this PC. Set the shareable address to your public IP and forward TCP port 38761 on your router.".into());
+                    panel.set_status("Session is running on this PC. This prototype is unencrypted: use only a trusted LAN and do not port-forward it to the internet.".into());
                     snack("Team session created");
                 }
                 Err(e) => snack(e),
