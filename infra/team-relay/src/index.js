@@ -113,7 +113,7 @@ function makeSnapshot(session) {
   const byMatch = new Map();
   for (const c of Object.values(session.contributions)) {
     const list = byMatch.get(c.matchSessionId) || [];
-    list.push(c); byMatch.set(c.match_session_id, list);
+    list.push(c); byMatch.set(c.matchSessionId, list);
   }
   const matches = [...byMatch.entries()].map(([matchSessionId, contributions]) => {
     const players = contributions.map(c => ({
