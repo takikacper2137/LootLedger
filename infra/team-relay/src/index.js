@@ -29,29 +29,31 @@ export class SessionRoom {
   constructor(state) { this.state = state; this.storage = state.storage; }
 
   async fetch(request) {
-    if (request.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
-    const body = await readJson(request);
-    if (!body) return json({ ok: false, error: "Invalid or oversized JSON request" }, 400);
+    return this.state.blockConcurrencyWhile(async () => {
+      if (request.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
+      const body = await readJson(request);
+      if (!body) return json({ ok: false, error: "Invalid or oversized JSON request" }, 400);
 
-    if (new URL(request.url).pathname.endsWith("/create")) {
-      if (await this.storage.get("session")) return json({ ok: false, error: "Session already exists" }, 409);
-      if (!validIdentity(body.ownerId, body.ownerName) || !isUuid(body.sessionId)) return json({ ok: false, error: "Invalid host identity" }, 400);
-      const session = {
-        id: body.sessionId, joinCode: randomToken(), ownerId: body.ownerId, ownerName: body.ownerName,
-        ownerToken: randomToken(),
-        members: { [body.ownerId]: { name: body.ownerName, token: null, connected: true, owner: true } },
-        contributions: {}, active: true,
-      };
-      session.members[body.ownerId].token = session.ownerToken;
-      await this.storage.put("session", session);
-      return json({ ok: true, credentials: { sessionId: session.id, joinCode: session.joinCode, ownerToken: session.ownerToken } });
-    }
+      if (new URL(request.url).pathname.endsWith("/create")) {
+        if (await this.storage.get("session")) return json({ ok: false, error: "Session already exists" }, 409);
+        if (!validIdentity(body.ownerId, body.ownerName) || !isUuid(body.sessionId)) return json({ ok: false, error: "Invalid host identity" }, 400);
+        const session = {
+          id: body.sessionId, joinCode: randomToken(), ownerId: body.ownerId, ownerName: body.ownerName,
+          ownerToken: randomToken(),
+          members: { [body.ownerId]: { name: body.ownerName, token: null, connected: true, owner: true } },
+          contributions: {}, active: true,
+        };
+        session.members[body.ownerId].token = session.ownerToken;
+        await this.storage.put("session", session);
+        return json({ ok: true, credentials: { sessionId: session.id, joinCode: session.joinCode, ownerToken: session.ownerToken } });
+      }
 
-    const session = await this.storage.get("session");
-    if (!session || !session.active) return json({ ok: false, error: "Session is not active" }, 404);
-    const result = processRequest(session, body);
-    if (result.status === 200) await this.storage.put("session", session);
-    return json(result.body, result.status);
+      const session = await this.storage.get("session");
+      if (!session || !session.active) return json({ ok: false, error: "Session is not active" }, 404);
+      const result = processRequest(session, body);
+      if (result.status === 200) await this.storage.put("session", session);
+      return json(result.body, result.status);
+    });
   }
 }
 
