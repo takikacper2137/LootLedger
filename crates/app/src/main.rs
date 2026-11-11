@@ -1970,16 +1970,17 @@ fn team_action(action: &str) {
                 else {
                     return Err("You are not connected to a hosted session".to_owned());
                 };
-                lootledger_core::team_server::send_request(
+                let result = lootledger_core::team_server::send_request(
                     address,
                     &lootledger_core::team_server::Request::Leave {
                         session_id: credentials.session_id.clone(),
                         participant_token: credentials.participant_token.clone(),
                     },
-                )?;
+                )
+                .map(|_| ());
                 app.team_participant = None;
                 app.team_address = None;
-                Ok(())
+                result
             })
             .unwrap_or_else(|| Err("Application state unavailable".into()));
 
