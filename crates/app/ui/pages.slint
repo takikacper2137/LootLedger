@@ -467,7 +467,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             Text { text: "Only the host runs the server and can end the session. Epic IDs and display names are visible to session members. Share the LAN address and invite code only on a trusted local network; internet hosting is not secure yet."; color: Tokens.on-surface-variant; wrap: word-wrap; }
             TextField { text: TeamSession.host-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.host-id = t; } }
             TextField { text: TeamSession.host-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.host-name = t; } }
-            Button { text: "Create session on this PC"; kind: "filled"; clicked => { TeamSession.action("host"); } }
+            Button { text: "Create session on this PC"; kind: "filled"; enabled: !TeamSession.connected; clicked => { TeamSession.action("host"); } }
             if TeamSession.is-host: VerticalLayout {
                 Text { text: "Invite code"; color: Tokens.on-surface-variant; }
                 Text { text: TeamSession.invite-code; font-size: Tokens.headline; font-weight: 700; color: Tokens.primary; }
@@ -487,7 +487,7 @@ export component TeamSessionsPage inherits VerticalLayout {
             TextField { text: TeamSession.join-code; label: "Invite code"; placeholder: "Paste the host's code"; edited(t) => { TeamSession.join-code = t; } }
             TextField { text: TeamSession.player-id; label: "Your Epic account ID"; placeholder: "Epic ID"; edited(t) => { TeamSession.player-id = t; } }
             TextField { text: TeamSession.player-name; label: "Your display name"; placeholder: "Name"; edited(t) => { TeamSession.player-name = t; } }
-            Button { text: "Join team session"; kind: "filled"; clicked => { TeamSession.action("join"); } }
+            Button { text: "Join team session"; kind: "filled"; enabled: !TeamSession.connected; clicked => { TeamSession.action("join"); } }
             if TeamSession.connected: Button { text: "Refresh team stats"; kind: "outlined"; clicked => { TeamSession.action("refresh"); } }
             if TeamSession.connected && !TeamSession.is-host: Button { text: "Leave session"; kind: "outlined"; clicked => { TeamSession.action("leave"); } }
         }
