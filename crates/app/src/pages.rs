@@ -378,7 +378,7 @@ fn detail(ui: &AppWindow, r: &MatchRow, p: &Prefs, t: &Theme) {
     g.set_detail_squad_note(s(if r.squad.is_none() {
         "This older match has no per-player detail. It is read again on the next scan, while its replay file is still on disk."
     } else {
-        ""
+        r.shared_note.as_deref().unwrap_or("")
     }));
     let total = r.squad_total.max(1) as f32;
     let squad: Vec<Row> = r

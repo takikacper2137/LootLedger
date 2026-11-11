@@ -61,11 +61,27 @@ pub fn load(path: &Path) -> Vec<Remote> {
         .unwrap_or_default()
 }
 
+/// Several threads (the window, the host, the sync) may store recordings at once; each read-modify-write is one step.
+static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Store a partner recording (replacing an earlier one of the same match and owner). Written atomically.
 pub fn add(path: &Path, remote: Remote) -> std::io::Result<()> {
+    add_many(path, vec![remote])
+}
+
+/// Store several partner recordings in one write.
+pub fn add_many(path: &Path, remotes: Vec<Remote>) -> std::io::Result<()> {
+    if remotes.is_empty() {
+        return Ok(());
+    }
+    let _guard = WRITE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut all = load(path);
-    all.retain(|r| r.key != remote.key);
-    all.push(remote);
+    for remote in remotes {
+        all.retain(|r| r.key != remote.key);
+        all.push(remote);
+    }
     let temp = path.with_extension("tmp");
     std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")))?;
     std::fs::write(

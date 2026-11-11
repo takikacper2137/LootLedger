@@ -237,6 +237,15 @@ impl Store {
         )?)
     }
 
+    /// Whether the ledger holds a match from this game session (any recorder).
+    pub fn has_session(&self, session: &str) -> Result<bool> {
+        Ok(self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM match_meta WHERE key LIKE ?1)",
+            params![format!("{session}:%")],
+            |r| r.get(0),
+        )?)
+    }
+
     /// The match a replay file was imported as, if any.
     pub fn match_for_file(&self, file: &str) -> Result<Option<String>> {
         Ok(self
@@ -302,10 +311,15 @@ impl Store {
         session_start: Option<DateTime<Local>>,
     ) -> Result<crate::stats::Snapshot> {
         let events = self.counted_events(include_broken)?;
+        // Partner recordings of the same matches raise the teammates' numbers; they never touch the ledger.
+        let remotes = crate::shared::load(&crate::shared::path_for(&self.path));
         let matches = self
             .history(include_broken, 0, u32::MAX)?
             .into_iter()
-            .map(|m| {
+            .map(|mut m| {
+                if let Some(meta) = m.meta.as_mut() {
+                    crate::shared::enrich(meta, &remotes, include_broken);
+                }
                 Ok(crate::stats::MatchIn {
                     started: local_time(&m.started)?,
                     id: m.id,

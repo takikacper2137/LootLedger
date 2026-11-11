@@ -26,7 +26,7 @@
 2. Download **[LootLedger.exe](https://github.com/femboypuppy/LootLedger/releases/latest)** and run it. Nothing to install. SmartScreen may warn because the exe is unsigned: click **More info → Run anyway**.
 3. Play. Each finished match is counted a few seconds after it ends.
 
-LootLedger never touches the game. It doesn't read game memory, inject anything or automate gameplay. It only reads the `.replay` files Fortnite writes once a match is over. Your data stays on your PC; the only internet traffic is the update check.
+LootLedger never touches the game. It doesn't read game memory, inject anything or automate gameplay. It only reads the `.replay` files Fortnite writes once a match is over. Your data stays on your PC. The only internet traffic is the update check, plus the optional match sharing with friends (off by default; see below).
 
 ## What you get
 
@@ -125,3 +125,12 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. It checks formatting, l
   - `check_pe_runtime.py`: the runtime-DLL check used in CI.
 
 [Made with Slint](https://slint.dev). Licences are in [THIRD_PARTY.md](THIRD_PARTY.md); test notes are in [VALIDATION.md](VALIDATION.md). Fortnite is a trademark of Epic Games; LootLedger is not affiliated with or endorsed by Epic.
+
+## Sharing matches with friends
+
+Played a match together? Each of you records your own chests exactly, but only part of your teammates' (and a slow PC may record very little). Match sharing combines the recordings so everyone's number comes from the best one. It is off by default.
+
+- **By file:** Settings → Shared matches → *Add partner replay…* and pick your friend's replay of the same match.
+- **Over the internet, no files:** both of you install the free [Tailscale](https://tailscale.com/) app and sign in. One of you turns on *Let friends connect to me* and tells the other the Tailscale address and the room password; the other enters them under *Connect to a friend*. Matches then sync about once a minute.
+
+Only the match summary (nicknames, player ids and chest counts) is exchanged, never a replay file, and only for matches you played together. Friends' numbers are kept beside your ledger and never count towards your own totals. Connections need the room password and go through Tailscale's encrypted network.

@@ -59,6 +59,9 @@ struct App {
     shown_commands: Vec<usize>,
     theme_dirty: bool,
     hotkeys_busy: Vec<String>,
+    /// Listens for friends who want to share matches, while sharing is on.
+    host: Option<lootledger_core::net::Host>,
+    share_status: String,
 }
 
 /// What the statistics depend on: the ledger version, whether broken-open chests count, and today's date.
@@ -155,6 +158,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         shown_commands: Vec::new(),
         theme_dirty: false,
         hotkeys_busy: Vec::new(),
+        host: None,
+        share_status: String::new(),
     };
     let app = Rc::new(RefCell::new(app));
     APP.with(|a| *a.borrow_mut() = Some(app.clone()));
@@ -169,6 +174,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Timer::single_shot(Duration::from_millis(300), || {
         configure_hotkeys();
         apply_overlay();
+        apply_sharing();
+        sync_now(false);
+    });
+    // Friends' matches arrive while you play: look again every minute when a friend's address is set.
+    let _share_timer = Timer::default();
+    _share_timer.start(TimerMode::Repeated, Duration::from_secs(60), || {
+        sync_now(false)
     });
 
     let scan_timer = Timer::default();
@@ -528,6 +540,11 @@ fn fill_settings() {
         );
         s.set_folder(c.replay_folder().to_string_lossy().into_owned().into());
         s.set_auto_watch(c.auto_watch());
+        s.set_share_host(c.share_host());
+        s.set_share_password(c.share_text("share_password").into());
+        s.set_share_peer(c.share_text("share_peer").into());
+        s.set_share_join_password(c.share_text("share_join_password").into());
+        s.set_share_status(app.share_status.clone().into());
         s.set_scan_seconds(c.scan_seconds() as i32);
         s.set_count_broken(c.count_broken());
         s.set_live_tracking(p.live_tracking);
@@ -693,8 +710,13 @@ fn set_setting(name: &str, value: &str) {
         return;
     }
     let config_value = match name {
-        "replay_folder" | "hotkey_add" | "hotkey_undo" => json!(value.trim()),
-        "auto_watch" | "count_broken" => json!(on),
+        "replay_folder"
+        | "hotkey_add"
+        | "hotkey_undo"
+        | "share_password"
+        | "share_peer"
+        | "share_join_password" => json!(value.trim()),
+        "auto_watch" | "count_broken" | "share_host" => json!(on),
         "scan_seconds" => json!(value.parse::<i64>().unwrap_or(20)),
         _ => return,
     };
@@ -702,6 +724,12 @@ fn set_setting(name: &str, value: &str) {
     report(result);
     if name.starts_with("hotkey") {
         configure_hotkeys();
+    }
+    if matches!(name, "share_host" | "share_password") {
+        apply_sharing();
+    }
+    if matches!(name, "share_peer" | "share_join_password") {
+        sync_now(true);
     }
     with_app(|a| a.snap_key = None);
     fill_settings();
@@ -1843,6 +1871,194 @@ fn open_path(path: &Path) {
     let _ = std::process::Command::new("explorer").arg(path).spawn();
 }
 
+/// Read friends' replays of matches you played together and keep them beside the ledger (never in it).
+fn add_partner_replays() {
+    let start = with_app(|a| a.config.replay_folder()).unwrap_or_default();
+    let Some(files) = rfd::FileDialog::new()
+        .set_title("Choose your friend's replay of the same match")
+        .set_directory(start)
+        .add_filter("Fortnite replay", &["replay"])
+        .pick_files()
+    else {
+        return;
+    };
+    let Some(Some(store_path)) = with_app(|a| a.store.as_ref().map(|s| s.path.clone())) else {
+        snack("The ledger is not open");
+        return;
+    };
+    snack("Reading the replay…");
+    // Decoding runs off the UI thread, like every other replay read.
+    std::thread::spawn(move || {
+        let target = lootledger_core::shared::path_for(&store_path);
+        let mut added: Vec<(String, String)> = Vec::new();
+        let mut refused: Vec<String> = Vec::new();
+        for file in files {
+            let name = file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let remote = std::fs::read(&file)
+                .map_err(|e| e.to_string())
+                .map(|bytes| lootledger_core::replay::decode(&name, &bytes))
+                .and_then(|replay| {
+                    lootledger_core::shared::remote_from_replay(&replay, &Local::now().to_rfc3339())
+                });
+            match remote.and_then(|r| {
+                let who = r.meta["owner"].as_str().unwrap_or("Your friend").to_owned();
+                let session = lootledger_core::shared::session_of(&r.key)
+                    .unwrap_or("")
+                    .to_owned();
+                lootledger_core::shared::add(&target, r)
+                    .map(|_| (who, session))
+                    .map_err(|e| e.to_string())
+            }) {
+                Ok(done) => added.push(done),
+                Err(e) => refused.push(format!("{name}: {e}")),
+            }
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            let mut notes: Vec<String> = Vec::new();
+            for (who, session) in &added {
+                let known = with_app(|a| {
+                    a.store
+                        .as_ref()
+                        .and_then(|s| s.has_session(session).ok())
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+                notes.push(if known {
+                    format!("Added {who}'s recording. Open the match under Matches to see the shared numbers.")
+                } else {
+                    format!("Added {who}'s recording. None of your matches is the same game yet, so it will join once yours is read.")
+                });
+            }
+            notes.extend(refused);
+            if !added.is_empty() {
+                with_app(|a| a.snap_key = None);
+                refresh(true);
+            }
+            snack(notes.join(" · "));
+        });
+    });
+}
+
+static SYNCING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn set_share_status(text: impl Into<String>) {
+    with_app(|a| a.share_status = text.into());
+    fill_settings();
+}
+
+/// Start or stop listening for friends, as the setting says. Sharing is off unless the player turned it on.
+fn apply_sharing() {
+    use lootledger_core::net;
+    // Stopping first lets a restart (new password) take the port again.
+    with_app(|a| a.host = None);
+    let (on, mut password, ledger) = with_app(|a| {
+        (
+            a.config.share_host(),
+            a.config.share_text("share_password"),
+            a.store.as_ref().map(|s| s.path.clone()),
+        )
+    })
+    .unwrap_or_default();
+    let Some(ledger) = ledger.filter(|_| on) else {
+        set_share_status("");
+        return;
+    };
+    if password.is_empty() {
+        password = net::new_password();
+        let saved = password.clone();
+        report(with_app(|a| a.config.set("share_password", json!(saved))).unwrap_or(Ok(())));
+    }
+    match net::Host::start(ledger, net::PORT, password, |result| {
+        let _ = slint::invoke_from_event_loop(move || host_event(result));
+    }) {
+        Ok(host) => {
+            with_app(|a| a.host = Some(host));
+            set_share_status(format!(
+                "Sharing is on. Friends connect to this PC's Tailscale address on port {}.",
+                net::PORT
+            ));
+        }
+        Err(e) => set_share_status(e),
+    }
+}
+
+/// A friend connected to this PC.
+fn host_event(result: Result<lootledger_core::net::Exchange, String>) {
+    match result {
+        Ok(ex) => {
+            let note = format!(
+                "A friend shared matches with you: {} received, {} sent.",
+                ex.received, ex.sent
+            );
+            if ex.received > 0 {
+                with_app(|a| a.snap_key = None);
+                refresh(true);
+                snack(note.clone());
+            }
+            set_share_status(format!("{note} ({})", Local::now().format("%H:%M")));
+        }
+        Err(e) => set_share_status(e),
+    }
+}
+
+/// Swap match summaries with the friend whose address is set. `manual` is a button press: it reports even when nothing is new.
+fn sync_now(manual: bool) {
+    let (peer, password, ledger) = with_app(|a| {
+        (
+            a.config.share_text("share_peer"),
+            a.config.share_text("share_join_password"),
+            a.store.as_ref().map(|s| s.path.clone()),
+        )
+    })
+    .unwrap_or_default();
+    let Some(ledger) = ledger else { return };
+    if peer.is_empty() {
+        if manual {
+            snack("Enter your friend's address first");
+        }
+        return;
+    }
+    if SYNCING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if manual {
+        snack("Sharing matches…");
+    }
+    std::thread::spawn(move || {
+        let result = lootledger_core::net::sync(&peer, &password, &ledger);
+        let _ = slint::invoke_from_event_loop(move || {
+            SYNCING.store(false, std::sync::atomic::Ordering::SeqCst);
+            match result {
+                Ok(ex) => {
+                    if ex.received > 0 {
+                        with_app(|a| a.snap_key = None);
+                        refresh(true);
+                    }
+                    let note = format!(
+                        "Shared matches with your friend: {} received, {} sent ({}).",
+                        ex.received,
+                        ex.sent,
+                        Local::now().format("%H:%M")
+                    );
+                    if manual || ex.received > 0 {
+                        snack(note.clone());
+                    }
+                    set_share_status(note);
+                }
+                Err(e) => {
+                    if manual {
+                        snack(e.clone());
+                    }
+                    set_share_status(e);
+                }
+            }
+        });
+    });
+}
+
 fn settings_action(action: &str) {
     match action {
         "browse-folder" => {
@@ -1921,6 +2137,8 @@ fn settings_action(action: &str) {
                 open_path(&f);
             }
         }
+        "Add partner replay" => add_partner_replays(),
+        "Share matches now" => sync_now(true),
         "Export settings" => {
             if let Some(path) = rfd::FileDialog::new()
                 .set_file_name("lootledger-settings.json")

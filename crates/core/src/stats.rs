@@ -101,6 +101,8 @@ pub struct MatchRow {
     pub unattributed: i64,
     /// The recorder's match stats (damage, accuracy, materials...), when the replay had them.
     pub stats: Option<Value>,
+    /// Set when a partner's recording of this match raised someone's count: what changed, in words.
+    pub shared_note: Option<String>,
     pub note: String,
     pub tags: String,
     pub favorite: bool,
@@ -694,6 +696,7 @@ pub fn compute(
                 .get("stats")
                 .filter(|s| s.as_object().is_some_and(|o| !o.is_empty()))
                 .cloned(),
+            shared_note: meta["shared_note"].as_str().map(str::to_owned),
             note: m.note.clone(),
             tags: m.tags.clone(),
             favorite: m.favorite,

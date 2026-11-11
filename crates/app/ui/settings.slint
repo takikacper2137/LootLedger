@@ -27,6 +27,11 @@ export global Settings {
     in property <int> default-range;
     in property <string> folder;
     in property <bool> auto-watch;
+    in property <bool> share-host;
+    in property <string> share-password;
+    in property <string> share-peer;
+    in property <string> share-join-password;
+    in property <string> share-status;
     in property <int> scan-seconds: 30;
     in property <bool> count-broken;
     in property <bool> live-tracking;
@@ -382,10 +387,45 @@ export component SettingsPage inherits VerticalLayout {
         }
     }
     Section {
+        title: "Shared matches";
+        icon: Icons.groups;
+        Row {
+            name: "Match with a friend's replay";
+            hint: "Played together? Add your friend's replay of the same match. Everyone's chests are then taken from the best recording, so a friend whose PC recorded little still gets the right number. Their chests never count towards your own totals.";
+            Button { min-width: 180px; text: "Add partner replay…"; clicked => { Settings.action("Add partner replay"); } }
+        }
+        Row {
+            name: "Let friends connect to me";
+            hint: "Play together over the internet without sending files. Needs the free Tailscale app on both PCs. Only the match summary (names and chest counts) is shared, only for matches you played together, and only with someone who knows your room password.";
+            Switch { checked: Settings.share-host; label: "Let friends connect to me"; toggled(on) => { Settings.set("share_host", on ? "true" : "false"); } }
+        }
+        if Settings.share-host: Row {
+            name: "Your room password";
+            hint: "Give this to your friends. Press Enter after changing it.";
+            TextField { width: 200px; text: Settings.share-password; label: "Room password"; accepted(text) => { Settings.set("share_password", text); } }
+        }
+        Row {
+            name: "Connect to a friend";
+            hint: "Their Tailscale address (for example 100.64.1.2) and the room password they gave you. Leave the address empty to stay disconnected.";
+            VerticalLayout {
+                spacing: Tokens.s;
+                TextField { width: 220px; text: Settings.share-peer; placeholder: "Friend's address"; label: "Friend's address"; accepted(text) => { Settings.set("share_peer", text); } }
+                TextField { width: 220px; text: Settings.share-join-password; placeholder: "Their room password"; label: "Their room password"; accepted(text) => { Settings.set("share_join_password", text); } }
+                Button { min-width: 180px; text: "Share matches now"; clicked => { Settings.action("Share matches now"); } }
+            }
+        }
+        if Settings.share-status != "": Text {
+            text: Settings.share-status;
+            font-size: Tokens.body;
+            color: Tokens.on-surface-variant;
+            wrap: word-wrap;
+        }
+    }
+    Section {
         title: "About";
         icon: Icons.info;
         Text {
-            text: "LootLedger " + Settings.version + " · counts the chests you open in Fortnite from the replays on this PC. Your data never leaves this PC.";
+            text: "LootLedger " + Settings.version + " · counts the chests you open in Fortnite from the replays on this PC. Your data stays on this PC unless you turn on match sharing.";
             font-size: Tokens.body;
             color: Tokens.on-surface;
             wrap: word-wrap;

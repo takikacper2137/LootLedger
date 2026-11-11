@@ -44,6 +44,21 @@ impl Config {
             .and_then(Value::as_bool)
             .unwrap_or(true)
     }
+    /// Whether this PC lets friends connect to share matches (off unless the player turns it on).
+    pub fn share_host(&self) -> bool {
+        self.data
+            .get("share_host")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+    /// Text settings of match sharing: `share_password` (hosting), `share_peer` and `share_join_password` (connecting).
+    pub fn share_text(&self, name: &str) -> String {
+        self.data
+            .get(name)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    }
     pub fn scan_seconds(&self) -> i64 {
         self.data
             .get("scan_seconds")
@@ -70,10 +85,17 @@ impl Config {
             "scan_seconds" if !value.as_i64().is_some_and(|s| (5..=600).contains(&s)) => {
                 return Err("Replay check interval must be 5–600 seconds".into());
             }
-            "replay_folder" | "hotkey_add" | "hotkey_undo" if !value.is_string() => {
+            "replay_folder"
+            | "hotkey_add"
+            | "hotkey_undo"
+            | "share_password"
+            | "share_peer"
+            | "share_join_password"
+                if !value.is_string() =>
+            {
                 return Err("Expected text".into());
             }
-            "count_broken" | "auto_watch" if !value.is_boolean() => {
+            "count_broken" | "auto_watch" | "share_host" if !value.is_boolean() => {
                 return Err("Expected on or off".into());
             }
             _ => {}
@@ -145,6 +167,23 @@ mod tests {
         assert_eq!(saved["detector_backend"], "model");
         assert_eq!(saved["regions"]["chest"][0], 0.1);
         assert_eq!(saved["auto_watch"], false);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn match_sharing_is_off_until_chosen_and_remembered() {
+        let dir = std::env::temp_dir().join(format!("lootledger-share-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        let mut config = Config::read(&path);
+        assert!(!config.share_host());
+        assert_eq!(config.share_text("share_peer"), "");
+        config.set("share_host", json!(true)).unwrap();
+        config.set("share_peer", json!("100.64.1.2")).unwrap();
+        assert!(config.set("share_host", json!("yes")).is_err());
+        let again = Config::read(&path);
+        assert!(again.share_host());
+        assert_eq!(again.share_text("share_peer"), "100.64.1.2");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
