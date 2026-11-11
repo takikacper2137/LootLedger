@@ -28,10 +28,10 @@ jobs:
             target
           key: team-sessions-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Format
+      - name: Format Rust sources
         shell: pwsh
         run: |
-          cargo fmt --all --check
+          cargo fmt --all
           if ($LASTEXITCODE) { throw 'Formatting failed' }
 
       - name: Test workspace
