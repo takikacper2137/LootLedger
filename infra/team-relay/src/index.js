@@ -120,7 +120,7 @@ export function makeSnapshot(session) {
   }
   const matches = [...byMatch.entries()].map(([matchSessionId, contributions]) => {
     const players = contributions.map(c => ({
-      playerId: c.submittedBy, playerName: c.owner?.name || c.submitted_by,
+      playerId: c.submittedBy, playerName: c.owner?.name || c.submittedBy,
       openings: c.events.filter(e => e.by === "me" && isChest(e.cls)).length,
     }));
     return { matchSessionId, contributions: contributions.length, players, uniqueOpenings: players.reduce((sum, p) => sum + p.openings, 0) };
