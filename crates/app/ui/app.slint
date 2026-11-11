@@ -8,8 +8,8 @@ import { Dash, DashGrid } from "dashboard.slint";
 import { Settings, SettingsPage } from "settings.slint";
 export { Overlay, MatchPopup } from "overlay.slint";
 export { Summary } from "summary.slint";
-import { Pages, Row, MatchesPage, OpeningsPage, TeammatesPage, CorrectDialog } from "pages.slint";
-export { Tokens, Icons, Anim, Dash, Settings, Tip, Drag, Palette, Pages, Row }
+import { Pages, Row, MatchesPage, OpeningsPage, TeammatesPage, TeamSessionsPage, TeamSession, CorrectDialog } from "pages.slint";
+export { Tokens, Icons, Anim, Dash, Settings, Tip, Drag, Palette, Pages, TeamSession, Row }
 export { CardData, DashRow, Cell, TableRow, BarRow, ChartPoint, Slice, HeatCell, Check, RingData, Trophy, Mark }
 
 // Window controls: Fluent glyphs, 46x32, red close hover, dimmed while the window is inactive.
@@ -145,6 +145,7 @@ export component AppWindow inherits Window {
         { title: "Openings", icon: Icons.inventory-2, sub: "Every chest you opened, newest first. Corrections are recorded and never silently lost." },
         { title: "Statistics", icon: Icons.insights, sub: "" },
         { title: "Teammates", icon: Icons.groups, sub: "Everyone who played with you, merged across matches. Pick someone to see their profile." },
+        { title: "Team Sessions", icon: Icons.groups, sub: "Play together: share parsed replay data with your squad." },
         { title: "Settings", icon: Icons.settings, sub: "Changes apply immediately. Your replays and ledger never leave this PC." },
     ];
     callback minimize;
@@ -175,7 +176,7 @@ export component AppWindow inherits Window {
     // Every key a focused control does not use bubbles up to here.
     keys := FocusScope {
         key-pressed(event) => {
-            if event.modifiers.control && event.text >= "1" && event.text <= "6" {
+            if event.modifiers.control && event.text >= "1" && event.text <= "7" {
                 root.previous-page = root.page;
                 root.page = event.text.to-float() - 1;
                 return accept;
@@ -248,8 +249,8 @@ export component AppWindow inherits Window {
                 padding-bottom: Tokens.l;
                 spacing: Tokens.m;
                 for p[i] in pages: RailItem {
-                    visible: i < 5;
-                    height: i < 5 ? self.preferred-height : 0px;
+                    visible: i < 6;
+                    height: i < 6 ? self.preferred-height : 0px;
                     icon: p.icon;
                     text: p.title;
                     selected: page == i;
@@ -257,16 +258,16 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { vertical-stretch: 1; }
                 RailItem {
-                    icon: pages[5].icon;
-                    text: pages[5].title;
-                    selected: page == 5;
-                    clicked => { root.previous-page = root.page; root.page = 5; }
+                    icon: pages[6].icon;
+                    text: pages[6].title;
+                    selected: page == 6;
+                    clicked => { root.previous-page = root.page; root.page = 6; }
                 }
             }
             // ---- Page content
             Rectangle {
                 horizontal-stretch: 1;
-                if page == 0 || page == 3 || page == 4 || page == 5: ScrollView {
+                if page == 0 || page == 3 || page == 4 || page == 5 || page == 6: ScrollView {
                     content-width: self.visible-width;
                     content-height: host.height;
                     host := PageHost {
@@ -339,7 +340,8 @@ export component AppWindow inherits Window {
                                 columns-changed(n) => { root.stats-columns-changed(n); }
                             }
                             if page == 4: TeammatesPage { }
-                            if page == 5: SettingsPage { }
+                            if page == 5: TeamSessionsPage { }
+                            if page == 6: SettingsPage { }
                         }
                     }
                 }
