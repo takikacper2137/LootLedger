@@ -567,18 +567,25 @@ fn scan_with(
         }
         match store.import_replay(&result, &job.name, job.size, job.mtime) {
             Ok(id) => {
-                if result.ok && result.session_id.is_some() && result.owner.as_ref().and_then(|p| p.epic_id.as_ref()).is_some() {
+                if result.ok
+                    && result.session_id.is_some()
+                    && result
+                        .owner
+                        .as_ref()
+                        .and_then(|player| player.epic_id.as_ref())
+                        .is_some()
+                {
                     imported.push(result.clone());
                 }
                 log.line(&format!(
-                "  {}: saved as {}",
-                job.name,
-                id.map_or(
-                    "not counted (no chests or no owner found)".to_owned(),
-                    |_| { "a match".to_owned() }
-                )
-            ));
-            },
+                    "  {}: saved as {}",
+                    job.name,
+                    id.map_or(
+                        "not counted (no chests or no owner found)".to_owned(),
+                        |_| { "a match".to_owned() }
+                    )
+                ));
+            }
             // This replay holds values the ledger refuses; the others are fine.
             Err(Error::Invalid(e)) => {
                 log.line(&format!("  {}: refused by the ledger: {e}", job.name));
