@@ -1,0 +1,53 @@
+name: Team Sessions CI
+
+on:
+  push:
+    branches: ["feature/team-sessions"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        shell: pwsh
+        run: rustup toolchain install
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: team-sessions-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Format
+        shell: pwsh
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE) { throw 'Formatting failed' }
+
+      - name: Test workspace
+        shell: pwsh
+        run: |
+          cargo test --workspace --locked
+          if ($LASTEXITCODE) { throw 'Tests failed' }
+
+      - name: Build Windows release
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p lootledger
+          if ($LASTEXITCODE) { throw 'Build failed' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LootLedger-Team-Sessions
+          path: target/release/lootledger.exe
+          if-no-files-found: error
