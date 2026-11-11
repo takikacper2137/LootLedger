@@ -313,13 +313,25 @@ pub fn together(count: i64, team: i64, p: &Prefs) -> Option<String> {
     (team > 0).then(|| format!("Together: {}", p.int(count + team)))
 }
 
-/// "All time: 4,477": every chest you have opened, for the pop-out counter, with the teammates' added when asked.
-pub fn all_time(count: i64, team: i64, with_team: bool, p: &Prefs) -> String {
-    let mut line = format!("All time: {}", p.int(count));
-    if with_team && team > 0 {
-        line.push_str(&format!(" · together {}", p.int(count + team)));
-    }
-    line
+/// "All time: 4,477": every chest you have opened, for the pop-out counter.
+pub fn all_time(count: i64, p: &Prefs) -> String {
+    format!("All time: {}", p.int(count))
+}
+
+/// The pop-out counter's party block: the party's chests in its last match and over the whole run, then one
+/// line per person (you first, at most four). `live` is what you have opened so far in a match still being
+/// played, which is not in the ledger yet.
+pub fn party_lines(party: &lootledger_core::stats::Party, live: i64, p: &Prefs) -> Vec<String> {
+    let mut lines = vec![format!(
+        "Party: last match {} · this session {}",
+        p.int(party.last),
+        p.int(party.total + live)
+    )];
+    lines.extend(party.people.iter().map(|person| {
+        let total = person.total + if person.me { live } else { 0 };
+        format!("{} {}", person.name, p.int(total))
+    }));
+    lines
 }
 
 /// Joins detail lines, skipping empty ones.
@@ -1433,12 +1445,47 @@ mod tests {
         assert_eq!(lines(&["a".into(), "b".into()]), "a\nb");
         assert_eq!(together(13, 2, &p).as_deref(), Some("Together: 15"));
         assert_eq!(together(13, 0, &p), None);
-        assert_eq!(all_time(4477, 640, false, &p), "All time: 4,477");
+        assert_eq!(all_time(4477, &p), "All time: 4,477");
+    }
+
+    #[test]
+    fn the_party_block_lists_everyone_and_counts_the_live_match_for_you() {
+        use lootledger_core::stats::{Party, PartyPerson};
+        let p = Prefs::default();
+        let person = |name: &str, me: bool, total: i64| PartyPerson {
+            name: name.into(),
+            me,
+            total,
+        };
+        let party = Party {
+            matches: 2,
+            last: 35,
+            total: 58,
+            people: vec![
+                person("Kacper", true, 35),
+                person("Ola", false, 18),
+                person("Wolf", false, 5),
+            ],
+        };
         assert_eq!(
-            all_time(4477, 640, true, &p),
-            "All time: 4,477 · together 5,117"
+            party_lines(&party, 0, &p),
+            [
+                "Party: last match 35 · this session 58",
+                "Kacper 35",
+                "Ola 18",
+                "Wolf 5"
+            ]
         );
-        assert_eq!(all_time(4477, 0, true, &p), "All time: 4,477");
+        // Four chests into a live match: yours and the session total grow, the others' stay.
+        assert_eq!(
+            party_lines(&party, 4, &p),
+            [
+                "Party: last match 35 · this session 62",
+                "Kacper 39",
+                "Ola 18",
+                "Wolf 5"
+            ]
+        );
     }
 
     #[test]

@@ -177,9 +177,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         apply_sharing();
         sync_now(false);
     });
-    // Friends' matches arrive while you play: look again every minute when a friend's address is set.
+    // Friends' matches arrive while you play: look again every 20 seconds when a friend's address is set.
     let _share_timer = Timer::default();
-    _share_timer.start(TimerMode::Repeated, Duration::from_secs(60), || {
+    _share_timer.start(TimerMode::Repeated, Duration::from_secs(20), || {
         sync_now(false)
     });
 
@@ -2809,12 +2809,12 @@ fn refresh_overlay() {
                 lines.push("Chests appear when the match ends".to_owned());
             }
             // Your lifetime total keeps counting during the match: what the ledger has plus this match so far.
-            lines.push(cards::all_time(
-                snap.all + so_far,
-                snap.team_total,
-                p.overlay_teammates,
-                p,
-            ));
+            lines.push(cards::all_time(snap.all + so_far, p));
+            if p.overlay_teammates
+                && let Some(party) = &snap.party
+            {
+                lines.extend(cards::party_lines(party, so_far, p));
+            }
             return Some((
                 format!("Live · {}", prefs::elapsed(view.elapsed.unwrap_or(0.0))),
                 count,
@@ -2827,26 +2827,26 @@ fn refresh_overlay() {
             p.int(snap.today),
             p.int(snap.session)
         )];
-        lines.push(cards::all_time(
-            snap.all,
-            snap.team_total,
-            p.overlay_teammates,
-            p,
-        ));
-        let mates: Vec<String> = row
-            .and_then(|r| r.squad.as_ref())
-            .into_iter()
-            .flatten()
-            .filter(|m| !m.me && m.total > 0)
-            .take(3)
-            .map(|m| format!("{} {}", m.name, p.int(m.total)))
-            .collect();
+        lines.push(cards::all_time(snap.all, p));
         if p.overlay_teammates {
-            if let Some(total) = row.and_then(|r| cards::together(r.count, r.team, p)) {
-                lines.push(total);
-            }
-            if !mates.is_empty() {
-                lines.push(mates.join(" · "));
+            if let Some(party) = &snap.party {
+                lines.extend(cards::party_lines(party, 0, p));
+            } else {
+                // Not in a party: still show the teammates of the last match, as before.
+                if let Some(total) = row.and_then(|r| cards::together(r.count, r.team, p)) {
+                    lines.push(total);
+                }
+                let mates: Vec<String> = row
+                    .and_then(|r| r.squad.as_ref())
+                    .into_iter()
+                    .flatten()
+                    .filter(|m| !m.me && m.total > 0)
+                    .take(3)
+                    .map(|m| format!("{} {}", m.name, p.int(m.total)))
+                    .collect();
+                if !mates.is_empty() {
+                    lines.push(mates.join(" · "));
+                }
             }
         }
         Some((

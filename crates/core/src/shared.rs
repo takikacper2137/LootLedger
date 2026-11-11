@@ -66,19 +66,26 @@ static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Store a partner recording (replacing an earlier one of the same match and owner). Written atomically.
 pub fn add(path: &Path, remote: Remote) -> std::io::Result<()> {
-    add_many(path, vec![remote])
+    add_many(path, vec![remote]).map(|_| ())
 }
 
-/// Store several partner recordings in one write.
-pub fn add_many(path: &Path, remotes: Vec<Remote>) -> std::io::Result<()> {
+/// Store several partner recordings in one write. Returns how many were new or different from what was kept.
+pub fn add_many(path: &Path, remotes: Vec<Remote>) -> std::io::Result<usize> {
     if remotes.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let _guard = WRITE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut all = load(path);
+    let mut changed = 0;
     for remote in remotes {
+        if !all
+            .iter()
+            .any(|r| r.key == remote.key && r.meta == remote.meta)
+        {
+            changed += 1;
+        }
         all.retain(|r| r.key != remote.key);
         all.push(remote);
     }
@@ -88,7 +95,7 @@ pub fn add_many(path: &Path, remotes: Vec<Remote>) -> std::io::Result<()> {
         &temp,
         serde_json::to_vec_pretty(&all).map_err(std::io::Error::other)?,
     )?;
-    std::fs::rename(&temp, path)
+    std::fs::rename(&temp, path).map(|_| changed)
 }
 
 fn counted(counts: &Value, include_broken: bool) -> i64 {
@@ -181,14 +188,41 @@ pub fn enrich(meta: &mut Value, remotes: &[Remote], include_broken: bool) -> usi
     }
     meta["team"] = Value::Object(team);
     meta["team_players"] = Value::Object(team_players);
-    meta["shared_note"] = json!(note(partners.len(), &raised));
+    let seen: Vec<String> = partners
+        .iter()
+        .map(|p| recording_summary(p, include_broken))
+        .collect();
+    meta["shared_note"] = json!(note(partners.len(), &raised, &seen));
     raised.len()
 }
 
-fn note(partners: usize, raised: &[(String, bool, i64, i64)]) -> String {
+/// What one partner's own recording says about everyone, e.g. "OlaZux's recording: OlaZux 2, TakiKacper 1".
+fn recording_summary(partner: &Remote, include_broken: bool) -> String {
+    let players: Vec<&Value> = partner.meta["players"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .collect();
+    let who = players
+        .iter()
+        .find(|p| p["me"].as_bool().unwrap_or(false))
+        .and_then(|p| p["name"].as_str())
+        .unwrap_or("A friend");
+    let counts: Vec<String> = players
+        .iter()
+        .filter_map(|p| {
+            let name = p["name"].as_str().filter(|n| !n.is_empty())?;
+            Some(format!("{name} {}", counted(&p["counts"], include_broken)))
+        })
+        .collect();
+    format!("{who}'s recording: {}", counts.join(", "))
+}
+
+fn note(partners: usize, raised: &[(String, bool, i64, i64)], seen: &[String]) -> String {
     let head = format!(
-        "Shared match: merged with {partners} other recording{}.",
-        if partners == 1 { "" } else { "s" }
+        "Shared match: merged with {partners} other recording{} ({}).",
+        if partners == 1 { "" } else { "s" },
+        seen.join("; ")
     );
     if raised.is_empty() {
         return format!("{head} Your recording already had everyone's chests.");

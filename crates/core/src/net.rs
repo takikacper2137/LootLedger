@@ -31,7 +31,7 @@ const IO_TIMEOUT: Duration = Duration::from_secs(20);
 /// What one connection moved.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Exchange {
-    /// Match summaries taken from the other side.
+    /// Match summaries from the other side that were new or different from what was kept.
     pub received: usize,
     /// Match summaries given to the other side.
     pub sent: usize,
@@ -133,7 +133,7 @@ fn offer_for(store: &Store, peer_keys: &[String]) -> Result<Vec<Remote>, String>
     Ok(offer)
 }
 
-/// Keep the well-formed summaries the other side offered; returns how many.
+/// Keep the well-formed summaries the other side offered; returns how many were new or different.
 fn accept(offer: &Value, target: &Path) -> Result<usize, String> {
     let mut good = Vec::new();
     for item in offer.as_array().into_iter().flatten().take(MAX_OFFERS) {
@@ -147,9 +147,7 @@ fn accept(offer: &Value, target: &Path) -> Result<usize, String> {
             good.push(remote);
         }
     }
-    let n = good.len();
-    shared::add_many(target, good).map_err(|e| e.to_string())?;
-    Ok(n)
+    shared::add_many(target, good).map_err(|e| e.to_string())
 }
 
 fn handle(mut stream: TcpStream, password: &str, ledger: &Path) -> Result<Exchange, String> {

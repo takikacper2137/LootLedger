@@ -108,6 +108,89 @@ pub struct MatchRow {
     pub favorite: bool,
 }
 
+/// One player's chests over the current party.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartyPerson {
+    pub name: String,
+    pub me: bool,
+    pub total: i64,
+}
+
+/// The matches you are playing with the same friends right now: everyone's chests, and each person's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Party {
+    pub matches: usize,
+    /// Everyone's chests in the newest match.
+    pub last: i64,
+    /// Everyone's chests over all the party's matches.
+    pub total: i64,
+    /// You first, then the others by chests; at most four.
+    pub people: Vec<PartyPerson>,
+}
+
+/// A party ends when nobody has played a match with it for this long.
+const PARTY_GAP_HOURS: i64 = 3;
+
+/// The party you are in: the newest match with teammates, and the matches before it that shared a teammate
+/// with it, back to the first one that did not or that lay more than three hours earlier. `rows` is newest
+/// first. None when you are playing alone, or the newest match with teammates ended long ago.
+pub fn party(rows: &[MatchRow], now: DateTime<Local>) -> Option<Party> {
+    let squad_of = |r: &MatchRow| -> Vec<(String, String, bool, i64)> {
+        r.squad
+            .iter()
+            .flatten()
+            .filter(|p| !p.bot)
+            .map(|p| (p.key.clone(), p.name.clone(), p.me, p.total))
+            .collect()
+    };
+    let has_mates = |r: &MatchRow| squad_of(r).iter().any(|p| !p.2);
+    let newest = rows.iter().position(has_mates)?;
+    let end_of = |r: &MatchRow| r.when + Duration::milliseconds((r.seconds * 1000.0) as i64);
+    if now - end_of(&rows[newest]) > Duration::hours(PARTY_GAP_HOURS) {
+        return None;
+    }
+    let friends: HashSet<String> = squad_of(&rows[newest])
+        .into_iter()
+        .filter(|p| !p.2)
+        .map(|p| p.0)
+        .collect();
+    let mut people: Vec<(String, PartyPerson)> = Vec::new();
+    let (mut matches, mut total, mut earliest) = (0, 0, end_of(&rows[newest]));
+    for row in &rows[newest..] {
+        let squad = squad_of(row);
+        let shares = squad.iter().any(|p| !p.2 && friends.contains(&p.0));
+        let close = earliest - end_of(row) <= Duration::hours(PARTY_GAP_HOURS);
+        if !shares || !close {
+            break;
+        }
+        earliest = row.when;
+        matches += 1;
+        for (key, name, me, chests) in squad {
+            total += chests;
+            match people.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, person)) => person.total += chests,
+                None => people.push((
+                    key,
+                    PartyPerson {
+                        name,
+                        me,
+                        total: chests,
+                    },
+                )),
+            }
+        }
+    }
+    let mut people: Vec<PartyPerson> = people.into_iter().map(|(_, p)| p).collect();
+    people.sort_by_key(|p| (!p.me, std::cmp::Reverse(p.total)));
+    people.truncate(4);
+    Some(Party {
+        matches,
+        last: squad_of(&rows[newest]).iter().map(|p| p.3).sum(),
+        total,
+        people,
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct Person {
     pub key: String,
@@ -198,6 +281,8 @@ pub struct Snapshot {
     pub player: Option<String>,
     pub partial: i64,
     pub match_rows: Vec<MatchRow>,
+    /// The party you are in right now, when there is one.
+    pub party: Option<Party>,
 }
 
 fn span(per_day: &BTreeMap<NaiveDate, i64>, start: NaiveDate, end: NaiveDate) -> i64 {
@@ -805,6 +890,7 @@ pub fn compute(
             })
             .count() as i64,
         per_day,
+        party: party(&rows, Local::now()),
         match_rows: rows,
     }
 }
@@ -1088,6 +1174,127 @@ mod tests {
             tags: String::new(),
             favorite: false,
         }
+    }
+
+    /// A match that started `minutes_ago` minutes before `now` and lasted ten minutes.
+    fn party_row(
+        now: DateTime<Local>,
+        minutes_ago: i64,
+        members: &[(&str, &str, bool, bool, i64)],
+    ) -> MatchRow {
+        let squad: Vec<SquadMember> = members
+            .iter()
+            .map(|(key, name, me, bot, total)| SquadMember {
+                key: (*key).into(),
+                name: (*name).into(),
+                me: *me,
+                bot: *bot,
+                anonymous: false,
+                unranked: false,
+                opened: *total,
+                broken: 0,
+                total: *total,
+                types: Counter::default(),
+                containers: Counter::default(),
+            })
+            .collect();
+        MatchRow {
+            id: format!("m{minutes_ago}"),
+            when: now - Duration::minutes(minutes_ago),
+            seconds: 600.0,
+            count: 0,
+            broken: 0,
+            mode: "Duo".into(),
+            types: Counter::default(),
+            team: 0,
+            ammo: 0,
+            placement: None,
+            players: None,
+            teammates: Vec::new(),
+            squad_total: squad.iter().map(|p| p.total).sum(),
+            squad: Some(squad),
+            mvp: None,
+            unattributed: 0,
+            stats: None,
+            shared_note: None,
+            note: String::new(),
+            tags: String::new(),
+            favorite: false,
+        }
+    }
+
+    #[test]
+    fn a_party_is_the_run_of_matches_with_the_same_friends() {
+        let now = Local::now();
+        let (me, ola, wolf) = (("K", "Kacper"), ("O", "Ola"), ("W", "Wolf"));
+        let with =
+            |m: (&'static str, &'static str), me_flag: bool, n: i64| (m.0, m.1, me_flag, false, n);
+        let rows = vec![
+            // newest first: a trio, a duo with Ola, a solo match, an older duo with Ola
+            party_row(
+                now,
+                20,
+                &[
+                    with(me, true, 20),
+                    with(ola, false, 10),
+                    with(wolf, false, 5),
+                ],
+            ),
+            party_row(now, 90, &[with(me, true, 15), with(ola, false, 8)]),
+            party_row(now, 150, &[with(me, true, 7)]),
+            party_row(now, 200, &[with(me, true, 99), with(ola, false, 99)]),
+        ];
+        let party = party(&rows, now).unwrap();
+        // The solo match ends the party, so the older duo is not part of it.
+        assert_eq!((party.matches, party.last, party.total), (2, 35, 58));
+        let people: Vec<(&str, i64)> = party
+            .people
+            .iter()
+            .map(|p| (p.name.as_str(), p.total))
+            .collect();
+        assert_eq!(people, [("Kacper", 35), ("Ola", 18), ("Wolf", 5)]);
+        assert!(party.people[0].me && !party.people[1].me);
+    }
+
+    #[test]
+    fn no_party_when_alone_or_when_the_last_one_ended_long_ago() {
+        let now = Local::now();
+        let me = ("K", "Kacper", true, false, 5);
+        let ola = ("O", "Ola", false, false, 4);
+        assert_eq!(party(&[party_row(now, 30, &[me])], now), None);
+        assert_eq!(party(&[], now), None);
+        // Ended five hours ago.
+        assert_eq!(party(&[party_row(now, 310, &[me, ola])], now), None);
+        // Still a party a little under three hours after the match ended.
+        assert!(party(&[party_row(now, 170, &[me, ola])], now).is_some());
+        // Two matches with Ola more than three hours apart are two parties.
+        let rows = vec![
+            party_row(now, 20, &[me, ola]),
+            party_row(now, 400, &[me, ola]),
+        ];
+        assert_eq!(party(&rows, now).unwrap().matches, 1);
+    }
+
+    #[test]
+    fn a_party_lists_at_most_four_people_and_leaves_out_bots() {
+        let now = Local::now();
+        let row = party_row(
+            now,
+            15,
+            &[
+                ("K", "Kacper", true, false, 1),
+                ("A", "A", false, false, 9),
+                ("B", "B", false, false, 8),
+                ("C", "C", false, false, 7),
+                ("D", "D", false, false, 6),
+                ("X", "Bot", false, true, 50),
+            ],
+        );
+        let party = party(&[row], now).unwrap();
+        let names: Vec<&str> = party.people.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Kacper", "A", "B", "C"]);
+        // The total counts everyone who is not a bot, even those cut from the list.
+        assert_eq!(party.total, 31);
     }
 
     #[test]
