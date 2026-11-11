@@ -33,7 +33,7 @@ LootLedger never touches the game. It doesn't read game memory, inject anything 
 Team Sessions let one player host a session while friends join using the host address and invite code. Each PC reads its own Fortnite replays locally and sends parsed match contributions to the host. The host groups contributions by Fortnite match session and credits chest openings from each player's own replay perspective, avoiding the common duplicate-counting problem caused by seeing the same teammate opening in multiple replays.
 
 - Only the session owner can end the session; participants can leave.
-- Raw `.replay` files and local paths are never sent.
+- Raw `.replay` files and local paths are never sent. Epic IDs and display names are included for player matching and are visible to session members.
 - The host must keep LootLedger open while the session is active.
 - This first transport prototype uses unencrypted direct TCP. **Use it only on a trusted local network. Do not forward its port or expose it to the public internet.** Encrypted internet hosting is not ready yet.
 - Only replays imported after joining/hosting are synced in this prototype; older matches are not backfilled.
