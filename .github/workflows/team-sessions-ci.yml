@@ -20,6 +20,10 @@ jobs:
         shell: pwsh
         run: node --check infra/team-relay/src/index.js
 
+      - name: Test team relay
+        shell: pwsh
+        run: npm test --prefix infra/team-relay
+
       - name: Install the pinned Rust toolchain
         shell: pwsh
         run: rustup toolchain install
