@@ -634,4 +634,85 @@ mod tests {
         );
         assert!(result.is_err());
     }
+    #[test]
+    fn team_totals_credit_only_each_players_own_perspective() {
+        use crate::model::{Opening, Player};
+
+        let server = TeamServer::start("127.0.0.1:0".parse().unwrap()).unwrap();
+        let host = server.create_session("host-epic", "Host").unwrap();
+        let joined = send_request(
+            server.address(),
+            &Request::Join {
+                join_code: host.join_code.clone(),
+                player_id: "friend-epic".into(),
+                player_name: "Friend".into(),
+            },
+        )
+        .unwrap();
+        let participant: ParticipantCredentials =
+            serde_json::from_value(joined["credentials"].clone()).unwrap();
+
+        let make_contribution = |player_id: &str, name: &str| ReplayContribution {
+            protocol_version: crate::team::PROTOCOL_VERSION,
+            match_session_id: "fortnite-match-123".into(),
+            submitted_by: player_id.into(),
+            duration_seconds: 120.0,
+            timestamp: None,
+            playlist: None,
+            placement: None,
+            total_players: None,
+            eliminations: None,
+            owner: Player {
+                epic_id: Some(player_id.into()),
+                name: Some(name.into()),
+                team: Some(1),
+                bot: Some(false),
+            },
+            teammates: Vec::new(),
+            events: vec![
+                Opening {
+                    t: 15.0,
+                    cls: "Tiered_Chest_Athena_C".into(),
+                    kind: "opened".into(),
+                    by: "me".into(),
+                    player: None,
+                    player_id: Some(player_id.into()),
+                    pawn: None,
+                    actor: 1,
+                    episode: 0,
+                },
+                Opening {
+                    t: 25.0,
+                    cls: "Tiered_Chest_Athena_C".into(),
+                    kind: "opened".into(),
+                    by: "team".into(),
+                    player: Some("Teammate".into()),
+                    player_id: Some("other-epic".into()),
+                    pawn: None,
+                    actor: 2,
+                    episode: 0,
+                },
+            ],
+        };
+
+        server
+            .upload_local(&host, make_contribution("host-epic", "Host"))
+            .unwrap();
+        send_request(
+            server.address(),
+            &Request::Upload {
+                session_id: participant.session_id.clone(),
+                participant_token: participant.participant_token.clone(),
+                contribution: make_contribution("friend-epic", "Friend"),
+            },
+        )
+        .unwrap();
+
+        let snapshot = server.snapshot_local(&host).unwrap();
+        assert_eq!(snapshot.matches.len(), 1);
+        assert_eq!(snapshot.matches[0].contributions, 2);
+        assert_eq!(snapshot.matches[0].unique_openings, 2);
+        assert_eq!(snapshot.matches[0].players.len(), 2);
+    }
+
 }
