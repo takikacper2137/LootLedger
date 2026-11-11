@@ -1854,6 +1854,38 @@ fn local_lan_address(port: u16) -> String {
     address.unwrap_or_else(|| format!("127.0.0.1:{port}"))
 }
 
+fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+
+        let mut child = std::process::Command::new("cmd")
+            .args(["/C", "clip"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Could not open Windows clipboard: {error}"))?;
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| "Could not access Windows clipboard input".to_owned())?
+            .write_all(text.as_bytes())
+            .map_err(|error| format!("Could not copy invite: {error}"))?;
+        let status = child
+            .wait()
+            .map_err(|error| format!("Could not finish clipboard copy: {error}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("Windows clipboard copy failed".into())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        Err("Clipboard copy is currently supported only on Windows".into())
+    }
+}
+
 fn team_action(action: &str) {
     let Some(ui) = window() else { return };
     let panel = ui.global::<TeamSession>();
@@ -1934,6 +1966,21 @@ fn team_action(action: &str) {
                     );
                     snack("Joined team session");
                 }
+                Err(error) => snack(error),
+            }
+        }
+        "copy-invite" => {
+            let address = panel.get_server_address().to_string();
+            let code = panel.get_invite_code().to_string();
+            if address.trim().is_empty() || code.trim().is_empty() {
+                snack("Create a team session before copying its invite");
+                return;
+            }
+            let invite = format!(
+                "LootLedger team session\\nAddress: {address}\\nInvite code: {code}"
+            );
+            match copy_text_to_clipboard(&invite) {
+                Ok(()) => snack("Invite details copied to clipboard"),
                 Err(error) => snack(error),
             }
         }
