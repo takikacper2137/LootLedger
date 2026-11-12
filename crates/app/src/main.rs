@@ -2069,6 +2069,7 @@ fn sync_now(manual: bool) {
             ) {
                 Ok(ex) => {
                     received += ex.received;
+                    room_people = cards::room_line(&ex.members);
                     parts.push(format!(
                         "online room: {} new, {} shared",
                         ex.received, ex.sent
