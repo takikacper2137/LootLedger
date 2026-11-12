@@ -35,6 +35,17 @@ pub struct Exchange {
     pub received: usize,
     /// Match summaries given to the other side.
     pub sent: usize,
+    /// Who else is in the online room (empty for a direct connection).
+    pub members: Vec<RoomMember>,
+}
+
+/// A person in an online room, as the server last saw them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RoomMember {
+    pub name: String,
+    /// Seconds since their LootLedger last contacted the room.
+    pub seen: u64,
+    pub me: bool,
 }
 
 fn proof(nonce: &str, password: &str) -> String {
@@ -100,6 +111,22 @@ pub(crate) fn my_keys(store: &Store) -> Result<Vec<String>, String> {
         }
     }
     Ok(keys)
+}
+
+/// Your own nickname as the latest recording saw it.
+pub(crate) fn my_name(store: &Store) -> Option<String> {
+    store
+        .history(true, 0, RECENT_MATCHES)
+        .ok()?
+        .iter()
+        .flat_map(|m| {
+            m.meta
+                .iter()
+                .flat_map(|m| m["players"].as_array())
+                .flatten()
+        })
+        .find(|p| p["me"] == true)
+        .and_then(|p| p["name"].as_str().map(str::to_owned))
 }
 
 /// What the other side needs of a match summary: which match it is and what each player's count was.
@@ -181,7 +208,11 @@ fn handle(mut stream: TcpStream, password: &str, ledger: &Path) -> Result<Exchan
     let theirs = read_line(&mut reader)?;
     let received = accept(&theirs["offer"], &shared::path_for(ledger))?;
     write_line(&mut stream, &json!({"done": true, "received": received}))?;
-    Ok(Exchange { received, sent })
+    Ok(Exchange {
+        received,
+        sent,
+        ..Exchange::default()
+    })
 }
 
 /// Connect to a host and swap match summaries. `address` is a host name or IP, with an optional `:port`.
@@ -227,7 +258,11 @@ pub fn sync(address: &str, password: &str, ledger: &Path) -> Result<Exchange, St
     write_line(&mut stream, &json!({"offer": offer}))?;
     // The host's confirmation is a courtesy; the data is already stored on both sides.
     let _ = read_line(&mut reader);
-    Ok(Exchange { received, sent })
+    Ok(Exchange {
+        received,
+        sent,
+        ..Exchange::default()
+    })
 }
 
 /// A running host. Dropping it stops listening.

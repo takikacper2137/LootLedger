@@ -95,6 +95,7 @@ type Held = (String, Vec<Value>, Vec<String>);
 struct FakeRoom {
     members: RefCell<BTreeMap<String, Held>>,
     calls: RefCell<Vec<(String, bool)>>,
+    names: RefCell<BTreeMap<String, String>>,
 }
 
 impl FakeRoom {
@@ -109,6 +110,9 @@ impl FakeRoom {
             .map(|k| k.as_str().unwrap().to_owned())
             .collect();
         let has_list = req["offer"].is_array();
+        self.names
+            .borrow_mut()
+            .insert(who.clone(), req["name"].as_str().unwrap_or("").to_owned());
         self.calls.borrow_mut().push((url.to_owned(), has_list));
         let mut members = self.members.borrow_mut();
         if has_list {
@@ -139,9 +143,15 @@ impl FakeRoom {
             }
         }
         let have = members.get(&who).map(|m| m.0.clone());
-        Ok(json!({"ok": true, "have": have, "offer": offer})
-            .to_string()
-            .into_bytes())
+        let people: Vec<Value> = members
+            .keys()
+            .map(|id| json!({"name": self.names.borrow()[id], "seen": 0, "me": *id == who}))
+            .collect();
+        Ok(
+            json!({"ok": true, "have": have, "offer": offer, "members": people})
+                .to_string()
+                .into_bytes(),
+        )
     }
 }
 
@@ -163,10 +173,19 @@ fn friends_share_matches_through_a_room_and_nothing_is_sent_twice() {
     let first = relay::sync(&post, SERVER, ROOM, &kacper.ledger, &mut k_ack).unwrap();
     assert_eq!(first.received, 0);
     assert_eq!(first.sent, 2);
+    assert_eq!(first.members.len(), 1);
+    assert!(first.members[0].me);
     // Ola joins: she gets Kacper's s1 and is raised to what he saw; the stranger's match stays out.
     assert_eq!(squad_total(&ola, "Ola"), 2);
     let second = relay::sync(&post, SERVER, ROOM, &ola.ledger, &mut o_ack).unwrap();
     assert_eq!(second.received, 1);
+    let mut who: Vec<(&str, bool)> = second
+        .members
+        .iter()
+        .map(|m| (m.name.as_str(), m.me))
+        .collect();
+    who.sort();
+    assert_eq!(who, [("Kacper", false), ("Ola", true)]);
     assert_eq!(squad_total(&ola, "Ola"), 7);
     assert_eq!(squad_total(&ola, "Kacper"), 6);
     let kept = shared::load(&shared::path_for(&ola.ledger));

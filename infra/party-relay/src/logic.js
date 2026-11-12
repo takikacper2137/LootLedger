@@ -40,15 +40,17 @@ function fail(status, error) {
  * Handle one sync. `state` is `{ members: { [who]: { digest, updated, keys, offer } } }` and is changed in place;
  * `changed` tells the caller whether it must be stored again.
  *
- * request: { v: 1, who, keys: [playerKey…], digest, offer: [{key, meta}…] | null }
+ * request: { v: 1, who, name?, keys: [playerKey…], digest, offer: [{key, meta}…] | null }
  *  - `offer` may be left out (null) when `digest` is what the room already holds for this person.
- * reply:   { ok: true, have: digest the room holds for this person | null, offer: [{key, received, meta}…] }
+ * reply:   { ok: true, have: digest the room holds for this person | null, offer: [{key, received, meta}…],
+ *            members: [{name, seen, me}…] }   (`seen` = seconds since that person last synced)
  */
 export function sync(state, request, now) {
   if (!request || typeof request !== "object" || request.v !== 1) {
     return fail(400, "This server needs a newer LootLedger");
   }
   const { who, keys, digest, offer } = request;
+  const name = text(request.name, 40) ? request.name : "Someone";
   if (
     !text(who, 64) ||
     !Array.isArray(keys) ||
@@ -78,11 +80,12 @@ export function sync(state, request, now) {
     return fail(409, "This room is full");
   }
   if (offer != null) {
-    state.members[who] = { digest, updated: now, keys, offer };
+    state.members[who] = { digest, updated: now, keys, offer, name };
     changed = true;
   } else if (mine && mine.digest === digest) {
     mine.updated = now;
     mine.keys = keys;
+    mine.name = name;
     changed = true;
   }
 
@@ -97,9 +100,14 @@ export function sync(state, request, now) {
       }
     }
   }
+  const members = Object.entries(state.members).map(([id, member]) => ({
+    name: member.name ?? "Someone",
+    seen: Math.max(0, Math.round((now - member.updated) / 1000)),
+    me: id === who,
+  }));
   return {
     status: 200,
-    body: { ok: true, have: state.members[who]?.digest ?? null, offer: out },
+    body: { ok: true, have: state.members[who]?.digest ?? null, offer: out, members },
     changed,
   };
 }

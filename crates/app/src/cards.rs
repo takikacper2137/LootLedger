@@ -1410,6 +1410,31 @@ fn versus(
     parts.join(" · ")
 }
 
+/// Who is in the online room: "In the room: Kacper (you), Ola (online), Marek (5 min ago)".
+pub fn room_line(members: &[lootledger_core::net::RoomMember]) -> String {
+    if members.is_empty() {
+        return String::new();
+    }
+    let people: Vec<String> = members
+        .iter()
+        .map(|m| {
+            let name = if m.name.is_empty() {
+                "Someone"
+            } else {
+                &m.name
+            };
+            let when = match m.seen {
+                _ if m.me => "you".to_owned(),
+                0..=90 => "online".to_owned(),
+                s if s < 3600 => format!("{} min ago", s / 60),
+                s => format!("{} h ago", s / 3600),
+            };
+            format!("{name} ({when})")
+        })
+        .collect();
+    format!("In the room: {}", people.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1512,5 +1537,25 @@ mod tests {
         assert!(line.starts_with("M 0.00 96.00") && area.ends_with('Z'));
         let (smooth, _) = series_path(&[1.0, 3.0, 2.0], true);
         assert_eq!(smooth.matches(" C ").count(), 2);
+    }
+
+    #[test]
+    fn the_room_line_says_who_is_there_and_how_recently() {
+        use lootledger_core::net::RoomMember;
+        let person = |name: &str, seen, me| RoomMember {
+            name: name.into(),
+            seen,
+            me,
+        };
+        assert_eq!(room_line(&[]), "");
+        assert_eq!(
+            room_line(&[
+                person("Kacper", 0, true),
+                person("Ola", 20, false),
+                person("Marek", 300, false),
+                person("Ewa", 7300, false),
+            ]),
+            "In the room: Kacper (you), Ola (online), Marek (5 min ago), Ewa (2 h ago)"
+        );
     }
 }

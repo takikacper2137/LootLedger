@@ -94,3 +94,13 @@ test("malformed requests are refused", () => {
   ];
   for (const b of bad) assert.equal(sync({ members: {} }, b, NOW).status, 400, JSON.stringify(b)?.slice(0, 60));
 });
+
+test("everyone in the room is listed with their name and how long ago they were seen", () => {
+  const state = { members: {} };
+  sync(state, { ...request("K", ["K"], []), name: "Kacper" }, NOW);
+  const reply = sync(state, { ...request("O", ["O"], []), name: "Ola" }, NOW + 30_000);
+  assert.deepEqual(reply.body.members, [
+    { name: "Kacper", seen: 30, me: false },
+    { name: "Ola", seen: 0, me: true },
+  ]);
+});

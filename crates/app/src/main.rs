@@ -2051,6 +2051,7 @@ fn sync_now(manual: bool) {
     }
     std::thread::spawn(move || {
         let (mut parts, mut errors, mut received) = (Vec::new(), Vec::new(), 0);
+        let mut room_people = String::new();
         if online {
             let key = format!("{relay}|{room}");
             let mut acked = ROOM_ACK
@@ -2105,8 +2106,11 @@ fn sync_now(manual: bool) {
             if !errors.is_empty() {
                 note = format!("{note} {}", errors.join(" · ")).trim().to_owned();
             }
-            if manual || received > 0 || !errors.is_empty() && manual {
+            if manual || received > 0 {
                 snack(note.clone());
+            }
+            if !room_people.is_empty() {
+                note = format!("{note}\n{room_people}").trim().to_owned();
             }
             set_share_status(note);
         });

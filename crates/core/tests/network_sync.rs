@@ -108,14 +108,16 @@ fn a_friend_connecting_to_the_host_shares_only_the_matches_they_played_together(
         moved,
         net::Exchange {
             received: 1,
-            sent: 1
+            sent: 1,
+            ..Default::default()
         }
     );
     assert_eq!(
         rx.recv().unwrap().unwrap(),
         net::Exchange {
             received: 1,
-            sent: 1
+            sent: 1,
+            ..Default::default()
         }
     );
 

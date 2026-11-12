@@ -4,7 +4,7 @@
 //!
 //! The HTTPS call itself is a function the caller passes in, so this works (and is tested) without a network.
 use crate::{
-    net::{self, Exchange},
+    net::{self, Exchange, RoomMember},
     shared::{self, Remote},
     store::{Store, local_time},
 };
@@ -107,6 +107,7 @@ pub fn sync(
         // Nothing of yours is known yet (no match read), so there is nobody to match friends against.
         return Ok(Exchange::default());
     }
+    let name = net::my_name(&store).unwrap_or_default();
     let offer = recent_shared_matches(&store)?;
     let id = digest(&keys, &offer);
     let call = |with_list: bool| -> Result<Value, String> {
@@ -116,8 +117,7 @@ pub fn sync(
                 .map(|r| json!({"key": r.key, "meta": r.meta}))
                 .collect::<Vec<_>>()
         });
-        let body =
-            json!({"v": PROTOCOL, "who": keys[0], "keys": keys, "digest": id, "offer": list});
+        let body = json!({"v": PROTOCOL, "who": keys[0], "name": name, "keys": keys, "digest": id, "offer": list});
         let bytes = post(&url, body.to_string().as_bytes())?;
         let reply: Value = serde_json::from_slice(&bytes).map_err(|_| {
             "The server did not answer properly. Check the server address".to_owned()
@@ -138,8 +138,19 @@ pub fn sync(
     }
     *acked = reply["have"].as_str().map(str::to_owned);
     let received = net::accept(&reply["offer"], &shared::path_for(ledger))?;
+    let members = reply["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| RoomMember {
+            name: m["name"].as_str().unwrap_or("Someone").to_owned(),
+            seen: m["seen"].as_u64().unwrap_or(0),
+            me: m["me"] == true,
+        })
+        .collect();
     Ok(Exchange {
         received,
         sent: offer.len(),
+        members,
     })
 }
