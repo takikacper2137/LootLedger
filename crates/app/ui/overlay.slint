@@ -10,6 +10,9 @@ export component Overlay inherits Window {
     in property <string> heading;
     in property <string> count;
     in property <string> lines;
+    // Flipped on every update: it changes the card's own colour a hair, so the whole card is repainted. Without
+    // it only the first line was seen to repaint on some PCs and the counter looked stuck.
+    in property <bool> flip;
     in property <color> surface;
     in property <color> ink;
     in property <color> muted;
@@ -22,7 +25,7 @@ export component Overlay inherits Window {
     background: transparent;
     Rectangle {
         border-radius: radius;
-        background: surface;
+        background: flip ? surface.with-alpha(0.99) : surface;
         content := VerticalLayout {
             padding: pad;
             spacing: pad / 4;

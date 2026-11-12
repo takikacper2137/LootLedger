@@ -2882,6 +2882,20 @@ fn refresh_overlay() {
                 lines.join("\n"),
             ));
         }
+        if app.tracker.state == live::State::Saving {
+            // The match is over but its replay is still being read: say so instead of showing the match
+            // before it as "This match".
+            let mut lines = vec![
+                "Reading the replay…".to_owned(),
+                cards::all_time(snap.all, p),
+            ];
+            if p.overlay_teammates
+                && let Some(party) = &snap.party
+            {
+                lines.extend(cards::party_lines(party, 0, p));
+            }
+            return Some(("Match over".to_owned(), "…".to_owned(), lines.join("\n")));
+        }
         let row = view.ended.as_ref().or(snap.last.as_ref());
         let mut lines = vec![format!(
             "Today: {} · Session: {}",
@@ -2935,6 +2949,7 @@ fn refresh_overlay() {
             w.set_heading(heading.into());
             w.set_count(count.into());
             w.set_lines(lines.into());
+            w.set_flip(!w.get_flip());
             w.window().request_redraw();
             w.set_surface(tokens.get_container_high());
             w.set_ink(tokens.get_on_surface());
