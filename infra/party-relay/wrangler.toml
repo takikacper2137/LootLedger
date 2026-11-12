@@ -1,0 +1,12 @@
+name = "lootledger-party-relay"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# The free Cloudflare plan only supports Durable Objects that use SQLite storage.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

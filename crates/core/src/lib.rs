@@ -3,6 +3,7 @@ pub mod bits;
 pub mod container;
 pub mod model;
 pub mod net;
+pub mod relay;
 pub mod replay;
 pub mod shared;
 pub mod stats;

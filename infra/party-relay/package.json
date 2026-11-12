@@ -1,0 +1,14 @@
+{
+  "name": "lootledger-party-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Free online room that passes LootLedger match summaries between friends",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

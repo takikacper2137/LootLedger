@@ -80,7 +80,7 @@ fn strings(value: &Value) -> Vec<String> {
 }
 
 /// The ids you play as in the recent matches of this ledger.
-fn my_keys(store: &Store) -> Result<Vec<String>, String> {
+pub(crate) fn my_keys(store: &Store) -> Result<Vec<String>, String> {
     let mut keys: Vec<String> = Vec::new();
     for m in store
         .history(true, 0, RECENT_MATCHES)
@@ -100,6 +100,11 @@ fn my_keys(store: &Store) -> Result<Vec<String>, String> {
         }
     }
     Ok(keys)
+}
+
+/// What the other side needs of a match summary: which match it is and what each player's count was.
+pub(crate) fn slim(meta: &Value) -> Value {
+    json!({"key": meta["key"], "players": meta["players"]})
 }
 
 /// Your recent matches that the player with these ids took part in.
@@ -123,7 +128,7 @@ fn offer_for(store: &Store, peer_keys: &[String]) -> Result<Vec<Remote>, String>
             offer.push(Remote {
                 key,
                 received: now.clone(),
-                meta,
+                meta: slim(&meta),
             });
         }
         if offer.len() >= MAX_OFFERS {
@@ -134,7 +139,7 @@ fn offer_for(store: &Store, peer_keys: &[String]) -> Result<Vec<Remote>, String>
 }
 
 /// Keep the well-formed summaries the other side offered; returns how many were new or different.
-fn accept(offer: &Value, target: &Path) -> Result<usize, String> {
+pub(crate) fn accept(offer: &Value, target: &Path) -> Result<usize, String> {
     let mut good = Vec::new();
     for item in offer.as_array().into_iter().flatten().take(MAX_OFFERS) {
         let Ok(remote) = serde_json::from_value::<Remote>(item.clone()) else {
