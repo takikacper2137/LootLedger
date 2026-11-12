@@ -31,6 +31,8 @@ export global Settings {
     in property <string> share-password;
     in property <string> share-peer;
     in property <string> share-join-password;
+    in property <string> share-relay;
+    in property <string> share-room;
     in property <string> share-status;
     in property <int> scan-seconds: 30;
     in property <bool> count-broken;
@@ -414,7 +416,7 @@ export component SharingPage inherits VerticalLayout {
         title: "Play with friends";
         icon: Icons.groups;
         Text {
-            text: "How it works: you and your friends each keep your own recordings. After a match you played together, the app combines them, so everyone's number comes from the best recording. Over the internet: install the free Tailscale app on both PCs, then one of you switches on \"Let friends connect to me\" and the other types in that PC's Tailscale address and the room password.";
+            text: "How it works: you and your friends each keep your own recordings. After a match you played together, the app combines them, so everyone's number comes from the best recording. Over the internet the easiest way is an online room: you all type the same server address and room code. Without a server you can also connect directly through the free Tailscale app.";
             font-size: Tokens.body;
             color: Tokens.on-surface;
             wrap: word-wrap;
@@ -423,6 +425,20 @@ export component SharingPage inherits VerticalLayout {
             name: "Match with a friend's replay";
             hint: "Played together? Add your friend's replay of the same match. Everyone's chests are then taken from the best recording, so a friend whose PC recorded little still gets the right number. Their chests never count towards your own totals.";
             Button { min-width: 180px; text: "Add partner replay…"; clicked => { Settings.action("Add partner replay"); } }
+        }
+        Row {
+            name: "Online room (easiest)";
+            hint: "Everyone types the same server address and room code, so nobody has to be a host or install anything. Set up the free server once (the guide is in the README), then one of you presses New room code and tells the others the code.";
+            VerticalLayout {
+                spacing: Tokens.s;
+                TextField { width: 240px; text: Settings.share-relay; placeholder: "Server address"; label: "Server address"; accepted(text) => { Settings.set("share_relay", text); } }
+                TextField { width: 240px; text: Settings.share-room; placeholder: "Room code"; label: "Room code"; accepted(text) => { Settings.set("share_room", text); } }
+                HorizontalLayout {
+                    spacing: Tokens.s;
+                    Button { min-width: 114px; text: "New room code"; clicked => { Settings.action("New room code"); } }
+                    Button { min-width: 114px; text: "Share now"; clicked => { Settings.action("Share matches now"); } }
+                }
+            }
         }
         Row {
             name: "Let friends connect to me";

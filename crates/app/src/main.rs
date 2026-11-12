@@ -2,6 +2,7 @@
 
 mod cards;
 mod config;
+mod http;
 mod icons;
 mod live;
 #[cfg(windows)]
@@ -544,6 +545,8 @@ fn fill_settings() {
         s.set_share_password(c.share_text("share_password").into());
         s.set_share_peer(c.share_text("share_peer").into());
         s.set_share_join_password(c.share_text("share_join_password").into());
+        s.set_share_relay(c.share_text("share_relay").into());
+        s.set_share_room(c.share_text("share_room").into());
         s.set_share_status(app.share_status.clone().into());
         s.set_scan_seconds(c.scan_seconds() as i32);
         s.set_count_broken(c.count_broken());
@@ -715,7 +718,9 @@ fn set_setting(name: &str, value: &str) {
         | "hotkey_undo"
         | "share_password"
         | "share_peer"
-        | "share_join_password" => json!(value.trim()),
+        | "share_join_password"
+        | "share_relay"
+        | "share_room" => json!(value.trim()),
         "auto_watch" | "count_broken" | "share_host" => json!(on),
         "scan_seconds" => json!(value.parse::<i64>().unwrap_or(20)),
         _ => return,
@@ -728,7 +733,10 @@ fn set_setting(name: &str, value: &str) {
     if matches!(name, "share_host" | "share_password") {
         apply_sharing();
     }
-    if matches!(name, "share_peer" | "share_join_password") {
+    if matches!(
+        name,
+        "share_peer" | "share_join_password" | "share_relay" | "share_room"
+    ) {
         sync_now(true);
     }
     with_app(|a| a.snap_key = None);
@@ -2010,20 +2018,28 @@ fn host_event(result: Result<lootledger_core::net::Exchange, String>) {
     }
 }
 
-/// Swap match summaries with the friend whose address is set. `manual` is a button press: it reports even when nothing is new.
+/// Which list of yours the online room already holds, so an unchanged list is not sent again.
+static ROOM_ACK: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+
+/// Swap match summaries with the online room and with the friend whose address is set. `manual` is a button
+/// press: it reports even when nothing is new.
 fn sync_now(manual: bool) {
-    let (peer, password, ledger) = with_app(|a| {
+    let (peer, password, relay, room, ledger) = with_app(|a| {
         (
             a.config.share_text("share_peer"),
             a.config.share_text("share_join_password"),
+            a.config.share_text("share_relay"),
+            a.config.share_text("share_room"),
             a.store.as_ref().map(|s| s.path.clone()),
         )
     })
     .unwrap_or_default();
     let Some(ledger) = ledger else { return };
-    if peer.is_empty() {
+    let friend = !peer.is_empty();
+    let online = !relay.is_empty() && !room.is_empty();
+    if !friend && !online {
         if manual {
-            snack("Enter your friend's address first");
+            snack("Set the server address and room code (or a friend's address) first");
         }
         return;
     }
@@ -2034,33 +2050,65 @@ fn sync_now(manual: bool) {
         snack("Sharing matches…");
     }
     std::thread::spawn(move || {
-        let result = lootledger_core::net::sync(&peer, &password, &ledger);
+        let (mut parts, mut errors, mut received) = (Vec::new(), Vec::new(), 0);
+        if online {
+            let key = format!("{relay}|{room}");
+            let mut acked = ROOM_ACK
+                .lock()
+                .ok()
+                .and_then(|held| held.clone())
+                .filter(|(k, _)| *k == key)
+                .map(|(_, digest)| digest);
+            match lootledger_core::relay::sync(
+                &|url, body| http::post_json(url, body),
+                &relay,
+                &room,
+                &ledger,
+                &mut acked,
+            ) {
+                Ok(ex) => {
+                    received += ex.received;
+                    parts.push(format!(
+                        "online room: {} new, {} shared",
+                        ex.received, ex.sent
+                    ));
+                }
+                Err(e) => errors.push(format!("Online room: {e}")),
+            }
+            if let Ok(mut held) = ROOM_ACK.lock() {
+                *held = acked.map(|digest| (key, digest));
+            }
+        }
+        if friend {
+            match lootledger_core::net::sync(&peer, &password, &ledger) {
+                Ok(ex) => {
+                    received += ex.received;
+                    parts.push(format!("friend: {} new, {} shared", ex.received, ex.sent));
+                }
+                Err(e) => errors.push(format!("Friend: {e}")),
+            }
+        }
         let _ = slint::invoke_from_event_loop(move || {
             SYNCING.store(false, std::sync::atomic::Ordering::SeqCst);
-            match result {
-                Ok(ex) => {
-                    if ex.received > 0 {
-                        with_app(|a| a.snap_key = None);
-                        refresh(true);
-                    }
-                    let note = format!(
-                        "Shared matches with your friend: {} received, {} sent ({}).",
-                        ex.received,
-                        ex.sent,
-                        Local::now().format("%H:%M")
-                    );
-                    if manual || ex.received > 0 {
-                        snack(note.clone());
-                    }
-                    set_share_status(note);
-                }
-                Err(e) => {
-                    if manual {
-                        snack(e.clone());
-                    }
-                    set_share_status(e);
-                }
+            if received > 0 {
+                with_app(|a| a.snap_key = None);
+                refresh(true);
             }
+            let mut note = String::new();
+            if !parts.is_empty() {
+                note = format!(
+                    "Shared matches ({}): {}.",
+                    Local::now().format("%H:%M"),
+                    parts.join(", ")
+                );
+            }
+            if !errors.is_empty() {
+                note = format!("{note} {}", errors.join(" · ")).trim().to_owned();
+            }
+            if manual || received > 0 || !errors.is_empty() && manual {
+                snack(note.clone());
+            }
+            set_share_status(note);
         });
     });
 }
@@ -2145,6 +2193,7 @@ fn settings_action(action: &str) {
         }
         "Add partner replay" => add_partner_replays(),
         "Share matches now" => sync_now(true),
+        "New room code" => set_setting("share_room", &lootledger_core::relay::new_room_code()),
         "Export settings" => {
             if let Some(path) = rfd::FileDialog::new()
                 .set_file_name("lootledger-settings.json")

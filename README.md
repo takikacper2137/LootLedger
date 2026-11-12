@@ -128,6 +128,8 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`. It checks formatting, l
 
 ## Sharing matches with friends
 
+The easiest way is an online room: one person deploys the free server in `infra/party-relay` once (guide in Polish inside), then everyone types the same server address and room code on the Party page. Direct connection over Tailscale also still works.
+
 Played a match together? Each of you records your own chests exactly, but only part of your teammates' (and a slow PC may record very little). Match sharing combines the recordings so everyone's number comes from the best one. It is off by default.
 
 - **By file:** the **Party** page (left menu) → *Add partner replay…* and pick your friend's replay of the same match.

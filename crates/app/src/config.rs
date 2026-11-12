@@ -51,7 +51,8 @@ impl Config {
             .and_then(Value::as_bool)
             .unwrap_or(false)
     }
-    /// Text settings of match sharing: `share_password` (hosting), `share_peer` and `share_join_password` (connecting).
+    /// Text settings of match sharing: `share_password` (hosting), `share_peer` and `share_join_password` (connecting to
+    /// a friend), `share_relay` and `share_room` (the online room).
     pub fn share_text(&self, name: &str) -> String {
         self.data
             .get(name)
