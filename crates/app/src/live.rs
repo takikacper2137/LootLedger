@@ -99,6 +99,19 @@ pub struct Tracker {
     started: Option<f64>,
 }
 
+/// Whether the ledger holds the finished replay `name`. A scan that runs as a match starts stores the file
+/// while it is still empty or tiny, so being listed is not enough: the stored size must be the size the file
+/// has now.
+pub fn imported_in_full(
+    files: &std::collections::HashMap<String, (i64, f64)>,
+    name: &str,
+    size_now: Option<u64>,
+) -> bool {
+    files
+        .get(name)
+        .is_some_and(|(size, _)| size_now.is_some() && u64::try_from(*size).ok() == size_now)
+}
+
 impl Tracker {
     pub fn new(log: PathBuf) -> Tracker {
         Tracker {
@@ -150,6 +163,11 @@ impl Tracker {
         if self.state == State::Saving {
             self.state = State::Ended;
         }
+    }
+
+    /// The current size of the replay being followed, read from the disk now.
+    pub fn size_on_disk(&self) -> Option<u64> {
+        std::fs::metadata(self.file.as_ref()?).ok().map(|m| m.len())
     }
 
     pub fn file_name(&self) -> Option<String> {
@@ -902,5 +920,22 @@ mod tests {
         assert_eq!(store.replay_files().unwrap().len(), 12);
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_match_counts_only_once_the_finished_file_is_in_the_ledger() {
+        let mut files = std::collections::HashMap::new();
+        // Not listed at all.
+        assert!(!imported_in_full(&files, "m.replay", Some(14_119_555)));
+        // Listed, but as the empty file a scan stored when the match started (the 01:39 case in a real log).
+        files.insert("m.replay".to_owned(), (0, 1.0));
+        assert!(!imported_in_full(&files, "m.replay", Some(14_119_555)));
+        // Listed with the size the file has now: read after the match ended.
+        files.insert("m.replay".to_owned(), (14_119_555, 2.0));
+        assert!(imported_in_full(&files, "m.replay", Some(14_119_555)));
+        // The file cannot be found on disk any more: do not call it counted.
+        assert!(!imported_in_full(&files, "m.replay", None));
+        // A file that is still growing is not the stored one.
+        assert!(!imported_in_full(&files, "m.replay", Some(14_200_000)));
     }
 }

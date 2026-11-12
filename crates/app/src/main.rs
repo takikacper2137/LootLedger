@@ -962,7 +962,13 @@ fn match_counted() -> bool {
     let counted = with_app(|app| {
         let name = app.tracker.file_name()?;
         let store = app.store.as_ref()?;
-        if !store.replay_files().ok()?.contains_key(&name) {
+        // Listed is not enough: a scan at the start of the match stored the then-empty file. Wait for the
+        // finished file to be read.
+        if !live::imported_in_full(
+            &store.replay_files().ok()?,
+            &name,
+            app.tracker.size_on_disk(),
+        ) {
             return None;
         }
         app.tracker.counted();
