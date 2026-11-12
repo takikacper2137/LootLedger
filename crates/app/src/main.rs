@@ -82,6 +82,7 @@ struct CountUp {
 thread_local! {
     static OFFSCREEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static OVERLAY: RefCell<Option<Overlay>> = const { RefCell::new(None) };
+    static LAST_OVERLAY: RefCell<String> = const { RefCell::new(String::new()) };
     static POPUP: RefCell<Option<(MatchPopup, u64)>> = const { RefCell::new(None) };
     static APP: RefCell<Option<Rc<RefCell<App>>>> = const { RefCell::new(None) };
 }
@@ -2924,11 +2925,17 @@ fn refresh_overlay() {
         return;
     };
     let tokens = ui.global::<Tokens>();
+    // What the counter is told to show, in the log, so a stale counter can be told from a wrong one.
+    let shown = format!("{heading} | {count} | {}", lines.replace('\n', " / "));
+    if LAST_OVERLAY.with(|last| last.replace(shown.clone()) != shown) {
+        trace(&format!("counter: {shown}"));
+    }
     OVERLAY.with(|o| {
         if let Some(w) = o.borrow().as_ref() {
             w.set_heading(heading.into());
             w.set_count(count.into());
             w.set_lines(lines.into());
+            w.window().request_redraw();
             w.set_surface(tokens.get_container_high());
             w.set_ink(tokens.get_on_surface());
             w.set_muted(tokens.get_on_surface_variant());
