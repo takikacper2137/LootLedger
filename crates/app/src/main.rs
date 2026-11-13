@@ -2,6 +2,7 @@
 
 mod cards;
 mod config;
+mod discord;
 mod http;
 mod icons;
 mod live;
@@ -83,6 +84,8 @@ thread_local! {
     static OFFSCREEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static OVERLAY: RefCell<Option<Overlay>> = const { RefCell::new(None) };
     static LAST_OVERLAY: RefCell<String> = const { RefCell::new(String::new()) };
+    static LAST_PRESENCE: RefCell<Option<(String, String, bool)>> = const { RefCell::new(None) };
+    static PRESENCE: std::cell::OnceCell<discord::Presence> = const { std::cell::OnceCell::new() };
     static POPUP: RefCell<Option<(MatchPopup, u64)>> = const { RefCell::new(None) };
     static APP: RefCell<Option<Rc<RefCell<App>>>> = const { RefCell::new(None) };
 }
@@ -548,6 +551,8 @@ fn fill_settings() {
         s.set_share_join_password(c.share_text("share_join_password").into());
         s.set_share_relay(c.share_text("share_relay").into());
         s.set_share_room(c.share_text("share_room").into());
+        s.set_discord_app_id(c.share_text("discord_app_id").into());
+        s.set_discord_status(discord::status().into());
         s.set_share_status(app.share_status.clone().into());
         s.set_scan_seconds(c.scan_seconds() as i32);
         s.set_count_broken(c.count_broken());
@@ -721,7 +726,8 @@ fn set_setting(name: &str, value: &str) {
         | "share_peer"
         | "share_join_password"
         | "share_relay"
-        | "share_room" => json!(value.trim()),
+        | "share_room"
+        | "discord_app_id" => json!(value.trim()),
         "auto_watch" | "count_broken" | "share_host" => json!(on),
         "scan_seconds" => json!(value.parse::<i64>().unwrap_or(20)),
         _ => return,
@@ -733,6 +739,11 @@ fn set_setting(name: &str, value: &str) {
     }
     if matches!(name, "share_host" | "share_password") {
         apply_sharing();
+    }
+    if name == "discord_app_id" {
+        // Forget what was sent, so the new ID (or switching it off) is acted on at once.
+        LAST_PRESENCE.with(|l| *l.borrow_mut() = Some((String::new(), String::new(), false)));
+        refresh_discord();
     }
     if matches!(
         name,
@@ -1288,6 +1299,7 @@ fn refresh(force: bool) {
     with_app(|a| a.cards_key = a.snap_key);
     refresh_status();
     refresh_overlay();
+    refresh_discord();
     if changed {
         with_app(|a| a.countups = countups);
         animate_in();
@@ -1585,6 +1597,7 @@ fn refresh_live() {
     });
     refresh_status();
     refresh_overlay();
+    refresh_discord();
 }
 
 fn refresh_status() {
@@ -2119,6 +2132,23 @@ fn sync_now(manual: bool) {
     });
 }
 
+/// Chests opened before the app was used: only the all-time total changes.
+fn add_earlier(text: &str) {
+    let digits: String = text.chars().filter(char::is_ascii_digit).collect();
+    let Ok(amount) = digits.parse::<i64>() else {
+        snack("Type the number of chests first");
+        return;
+    };
+    match with_app(|a| a.store.as_mut().map(|s| s.add_earlier(amount))).flatten() {
+        Some(Ok(_)) => {
+            changed_data();
+            snack(format!("Added {amount} chests to your all-time total"));
+        }
+        Some(Err(e)) => snack(e.to_string()),
+        None => snack("The ledger is not open"),
+    }
+}
+
 fn settings_action(action: &str) {
     match action {
         "browse-folder" => {
@@ -2197,6 +2227,7 @@ fn settings_action(action: &str) {
                 open_path(&f);
             }
         }
+        a if a.starts_with("add-earlier ") => add_earlier(&a["add-earlier ".len()..]),
         "Add partner replay" => add_partner_replays(),
         "Share matches now" => sync_now(true),
         "New room code" => set_setting("share_room", &lootledger_core::relay::new_room_code()),
@@ -2849,6 +2880,45 @@ fn save_overlay_position() {
     }
 }
 
+/// The line under your name in Discord, when an application ID is set. Only sent when its text changes.
+fn refresh_discord() {
+    let Some((client, activity)) = with_app(|app| {
+        let client = app.config.share_text("discord_app_id");
+        if client.is_empty() {
+            return Some((client, None));
+        }
+        let snap = app.snap.as_ref()?;
+        let p = &app.prefs;
+        let live = app.tracker.elapsed().map(|s| s as i64);
+        let now = chrono::Utc::now().timestamp();
+        let best = snap.best.map(|b| p.int(b));
+        let activity = lootledger_core::discord::presence(
+            &p.int(snap.all),
+            &p.int(snap.today),
+            best.as_deref(),
+            live,
+            now,
+        );
+        Some((client, Some(activity)))
+    })
+    .flatten() else {
+        return;
+    };
+    if client.is_empty() && PRESENCE.with(|cell| cell.get().is_none()) {
+        return; // never set up: nothing to clear, and no reason to start the Discord thread
+    }
+    let key = activity
+        .as_ref()
+        .map(|a| (a.details.clone(), a.state.clone(), a.started.is_some()));
+    if LAST_PRESENCE.with(|last| last.replace(key.clone()) == key) {
+        return; // same text as already sent (a running timer does not need re-sending)
+    }
+    PRESENCE.with(|cell| {
+        cell.get_or_init(discord::Presence::start)
+            .show(&client, activity)
+    });
+}
+
 /// The counter's text: the live match while it runs, else the match just counted or the last one.
 fn refresh_overlay() {
     let shown = OVERLAY.with(|o| o.borrow().is_some());
@@ -3015,13 +3085,20 @@ fn share_image(week: bool, copy: bool) {
                 format!("LootLedger · {player}"),
                 p.int(snap.all),
                 "chests opened, all time".to_owned(),
-                ["Today", "Best match", "Matches", "Top teammate"]
-                    .map(String::from)
-                    .to_vec(),
+                [
+                    "Today",
+                    "Best match",
+                    "Matches",
+                    "Teammates opened",
+                    "Top teammate",
+                ]
+                .map(String::from)
+                .to_vec(),
                 vec![
                     p.int(snap.today),
                     p.int(snap.best.unwrap_or(0)),
                     p.int(snap.matches),
+                    p.int(snap.team_total),
                     mate.map_or("–".into(), |m| format!("{} · {}", m.name, p.int(m.total))),
                 ],
                 format!(
@@ -3054,13 +3131,20 @@ fn share_image(week: bool, copy: bool) {
             format!("LootLedger · week of {} · {player}", p.short_date(monday)),
             p.int(snap.week),
             "chests opened this week".to_owned(),
-            ["Matches", "Best match", "vs last week", "Top teammate"]
-                .map(String::from)
-                .to_vec(),
+            [
+                "Matches",
+                "Best match",
+                "vs last week",
+                "Teammates opened",
+                "Top teammate",
+            ]
+            .map(String::from)
+            .to_vec(),
             vec![
                 p.int(rows.len() as i64),
                 best.map_or("–".into(), |b| p.int(b)),
                 format!("{sign}{}", p.int(change.abs())),
+                p.int(rows.iter().map(|r| r.team).sum()),
                 mate.map_or("–".into(), |m| format!("{} · {}", m.name, p.int(m.total))),
             ],
             format!(

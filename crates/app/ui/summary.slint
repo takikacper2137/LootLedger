@@ -27,13 +27,13 @@ export component Summary inherits Window {
         Text { x: 50px; y: 30px; text: heading; font-size: 30px; font-weight: 600; color: ink; }
         Text { x: 50px; y: 100px; text: total; font-size: 120px; font-weight: 600; color: ink; }
         Text { x: 50px; y: 250px; text: caption; font-size: 28px; color: ink; }
-        for name[i] in names: Text { x: 50px + i * 265px; y: 360px; width: 250px; text: name; font-size: 22px; color: ink; }
+        for name[i] in names: Text { x: 50px + i * 195px; y: 360px; width: i == names.length - 1 ? 240px : 185px; text: name; font-size: 22px; color: ink; }
         for value[i] in values: Text {
-            x: 50px + i * 265px;
+            x: 50px + i * 195px;
             y: 395px;
-            width: 250px;
+            width: i == values.length - 1 ? 240px : 185px;
             text: value;
-            font-size: i < 3 ? 40px : 26px;
+            font-size: i < values.length - 1 ? 40px : 26px;
             font-weight: 600;
             color: ink;
             overflow: elide;

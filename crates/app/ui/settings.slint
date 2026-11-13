@@ -33,6 +33,8 @@ export global Settings {
     in property <string> share-join-password;
     in property <string> share-relay;
     in property <string> share-room;
+    in property <string> discord-app-id;
+    in property <string> discord-status;
     in property <string> share-status;
     in property <int> scan-seconds: 30;
     in property <bool> count-broken;
@@ -235,6 +237,20 @@ export component SettingsPage inherits VerticalLayout {
             Switch { checked: Settings.count-broken; label: "Count chests you broke open"; toggled(on) => { Settings.set("count_broken", on ? "true" : "false"); } }
         }
         Row {
+            name: "Chests from before LootLedger";
+            hint: "Add the chests you opened before you started using the app, so the all-time total is right. It only changes the all-time number, not today, best match or the match count.";
+            HorizontalLayout {
+                spacing: Tokens.s;
+                earlier := TextField {
+                    width: 140px;
+                    placeholder: "e.g. 3000";
+                    label: "Chests to add";
+                    accepted(text) => { Settings.action("add-earlier " + text); earlier.text = ""; }
+                }
+                Button { min-width: 114px; text: "Add to total"; clicked => { Settings.action("add-earlier " + earlier.text); earlier.text = ""; } }
+            }
+        }
+        Row {
             name: "Read every replay again";
             hint: "Re-reads all replays Fortnite still keeps. Your corrections are kept.";
             Button { text: "Read all replays again"; clicked => { Settings.action("rescan"); } }
@@ -248,6 +264,20 @@ export component SettingsPage inherits VerticalLayout {
             font-size: Tokens.body;
             color: Tokens.on-surface-variant;
             wrap: word-wrap;
+        }
+        Row {
+            name: "Discord status";
+            hint: "Shows your chests under your name in Discord, e.g. \"8,838 chests opened\". One-time setup: open discord.com/developers/applications, click New Application, name it LootLedger (that name appears as the game), copy its Application ID and paste it here. Discord must be open on this PC. Leave empty to switch it off.";
+            VerticalLayout {
+                spacing: Tokens.s;
+                TextField { width: 240px; text: Settings.discord-app-id; placeholder: "Application ID"; label: "Discord application ID"; accepted(text) => { Settings.set("discord_app_id", text); } }
+                if Settings.discord-status != "": Text {
+                    text: Settings.discord-status;
+                    font-size: Tokens.body;
+                    color: Tokens.on-surface-variant;
+                    wrap: word-wrap;
+                }
+            }
         }
         Row {
             name: "Track the current match";

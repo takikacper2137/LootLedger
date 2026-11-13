@@ -510,6 +510,44 @@ impl Store {
         Ok(false)
     }
 
+    /// Chests opened before LootLedger was used: stored as one "Manual" entry dated just before the oldest
+    /// match, so they count towards the all-time total without changing today, the session, best match or
+    /// the match count.
+    pub fn add_earlier(&mut self, amount: i64) -> Result<String> {
+        if !(1..=1_000_000).contains(&amount) {
+            return invalid("Enter a number of chests between 1 and 1,000,000");
+        }
+        let tx = self.db.transaction()?;
+        let oldest: Option<String> = tx
+            .query_row("SELECT MIN(started) FROM matches", [], |r| r.get(0))
+            .optional()?
+            .flatten();
+        let when = oldest
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|t| t.with_timezone(&Utc) - chrono::Duration::seconds(1))
+            .unwrap_or_else(Utc::now)
+            .to_rfc3339_opts(chrono::SecondsFormat::Micros, false);
+        let (match_id, id) = (Uuid::new_v4().to_string(), Uuid::new_v4().to_string());
+        tx.execute(
+            "INSERT INTO matches(id, started, ended, seconds) VALUES(?1, ?2, ?2, 0)",
+            params![match_id, when],
+        )?;
+        tx.execute(
+            "INSERT INTO events VALUES(?1,?2,?3,NULL,'confirmed','Chest',?4,'manual correction',1.0,'Chests from before LootLedger',NULL)",
+            params![id, match_id, when, amount],
+        )?;
+        tx.execute(
+            "INSERT INTO audit(created,event_id,action,detail) VALUES(?1,?2,'added',?3)",
+            params![
+                now(),
+                id,
+                json!({"amount": amount, "type": "Chest", "earlier": true}).to_string()
+            ],
+        )?;
+        tx.commit()?;
+        Ok(id)
+    }
+
     pub fn add_correction(&mut self, amount: i64, chest_type: &str) -> Result<String> {
         if !(1..=10000).contains(&amount) {
             return invalid("Count must be between 1 and 10000");
@@ -1051,5 +1089,20 @@ mod tests {
                 .unwrap(),
             99
         );
+    }
+
+    #[test]
+    fn earlier_chests_count_in_total_but_not_in_today_or_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("ledger.sqlite")).unwrap();
+        store.import_replay(&fixture(), "x.replay", 1, 1.0).unwrap();
+        let before = store.snapshot(true, None).unwrap();
+        assert!(store.add_earlier(0).is_err());
+        store.add_earlier(3000).unwrap();
+        let after = store.snapshot(true, None).unwrap();
+        assert_eq!(after.all, before.all + 3000);
+        assert_eq!(after.matches, before.matches);
+        assert_eq!(after.today, before.today);
+        assert_eq!(after.best, before.best);
     }
 }
