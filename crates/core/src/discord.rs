@@ -6,6 +6,8 @@ use std::io::{self, Read};
 
 const OP_HANDSHAKE: u32 = 0;
 const OP_FRAME: u32 = 1;
+/// The name the picture must be uploaded under in the Discord developer portal (Rich Presence > Art Assets).
+pub const IMAGE_KEY: &str = "lootledger";
 
 /// What is shown under the player's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,9 +42,11 @@ pub fn handshake(client_id: &str) -> Vec<u8> {
 /// Set (or, with `None`, clear) the shown activity. `nonce` can be any text that differs per message.
 pub fn set_activity(pid: u32, nonce: &str, activity: Option<&Activity>) -> Vec<u8> {
     let activity = activity.map(|a| {
+        // The picture is an "art asset" uploaded to the Discord application under this key.
         let mut v = json!({
             "details": clip(&a.details),
             "state": clip(&a.state),
+            "assets": {"large_image": IMAGE_KEY, "large_text": "LootLedger"},
         });
         if let Some(start) = a.started {
             v["timestamps"] = json!({"start": start});
@@ -140,6 +144,7 @@ mod tests {
         assert_eq!(v["cmd"], "SET_ACTIVITY");
         assert_eq!(v["args"]["pid"], 42);
         assert_eq!(v["args"]["activity"]["details"], "8,838 chests opened");
+        assert_eq!(v["args"]["activity"]["assets"]["large_image"], IMAGE_KEY);
         assert_eq!(v["args"]["activity"]["timestamps"]["start"], 1_800_000_000);
 
         let cleared: Value = {

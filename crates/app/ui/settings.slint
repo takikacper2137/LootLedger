@@ -267,7 +267,7 @@ export component SettingsPage inherits VerticalLayout {
         }
         Row {
             name: "Discord status";
-            hint: "Shows your chests under your name in Discord, e.g. \"8,838 chests opened\". One-time setup: open discord.com/developers/applications, click New Application, name it LootLedger (that name appears as the game), copy its Application ID and paste it here. Discord must be open on this PC. Leave empty to switch it off.";
+            hint: "Shows your chests under your name in Discord, e.g. \"8,838 chests opened\". One-time setup: open discord.com/developers/applications, click New Application, name it LootLedger (that name appears as the game), copy its Application ID and paste it here. For the picture, open Rich Presence > Art Assets in the same page and upload an image named lootledger. Discord must be open on this PC. Leave empty to switch it off.";
             VerticalLayout {
                 spacing: Tokens.s;
                 TextField { width: 240px; text: Settings.discord-app-id; placeholder: "Application ID"; label: "Discord application ID"; accepted(text) => { Settings.set("discord_app_id", text); } }
