@@ -47,6 +47,8 @@ pub fn set_activity(pid: u32, nonce: &str, activity: Option<&Activity>) -> Vec<u
             "details": clip(&a.details),
             "state": clip(&a.state),
             "assets": {"large_image": IMAGE_KEY, "large_text": "LootLedger"},
+            // 3 = "Watching LootLedger" instead of "Playing LootLedger", so it does not look like a second game.
+            "type": 3,
         });
         if let Some(start) = a.started {
             v["timestamps"] = json!({"start": start});
@@ -145,6 +147,7 @@ mod tests {
         assert_eq!(v["args"]["pid"], 42);
         assert_eq!(v["args"]["activity"]["details"], "8,838 chests opened");
         assert_eq!(v["args"]["activity"]["assets"]["large_image"], IMAGE_KEY);
+        assert_eq!(v["args"]["activity"]["type"], 3);
         assert_eq!(v["args"]["activity"]["timestamps"]["start"], 1_800_000_000);
 
         let cleared: Value = {
